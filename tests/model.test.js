@@ -108,6 +108,7 @@ test("chart parser does not turn missing quote fields into zero", () => {
           fulldayPrice: null,
           fulldayChangePercent: null
         },
+        timestamp: [100, 200, 300, 400],
         indicators: { quote: [{ close: [null, 10, undefined, 11] }] }
       }]
     }
@@ -120,6 +121,24 @@ test("chart parser does not turn missing quote fields into zero", () => {
   assert.equal(quote.regularChangePercent, null)
   assert.equal(quote.extendedPrice, null)
   assert.deepEqual(quote.closes, [10, 11])
+  assert.deepEqual(quote.timestamps, [200, 400])
+})
+
+test("hover date formats by range and tolerates missing timestamps", () => {
+  assert.equal(Model.formatHoverDate(null, "1D"), "")
+  assert.equal(Model.formatHoverDate(undefined, "1Y"), "")
+  assert.equal(Model.isIntradayRange("1D"), true)
+  assert.equal(Model.isIntradayRange("1W"), true)
+  assert.equal(Model.isIntradayRange("1M"), false)
+  assert.equal(Model.isIntradayRange("1Y"), false)
+
+  // 2024-01-15 14:35:00 local — construct via Date and format both ways
+  const local = new Date(2024, 0, 15, 14, 35, 0)
+  const sec = Math.floor(local.getTime() / 1000)
+  const pad = n => (n < 10 ? "0" : "") + n
+  assert.equal(Model.formatHoverDate(sec, "1D"), `Jan 15, ${pad(local.getHours())}:${pad(local.getMinutes())}`)
+  assert.equal(Model.formatHoverDate(sec, "1Y"), "Jan 15, 2024")
+  assert.equal(Model.formatHoverDate(sec * 1000, "1M"), "Jan 15, 2024")
 })
 
 test("chart parser calculates change when Yahoo omits the percentage", () => {

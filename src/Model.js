@@ -309,16 +309,26 @@ function parseSearch(raw) {
   }
 }
 
-function numericCloses(indicators) {
+function chartSeries(result) {
+  var indicators = result && result.indicators
   var quote = indicators && indicators.quote && indicators.quote[0] ? indicators.quote[0] : null
   var closes = quote && quote.close ? quote.close : []
-  var out = []
+  var stamps = result && result.timestamp ? result.timestamp : []
+  var outCloses = []
+  var outStamps = []
   for (var i = 0; i < closes.length; i++) {
     if (closes[i] === null || closes[i] === undefined || closes[i] === "") continue
     var n = Number(closes[i])
-    if (isFinite(n)) out.push(n)
+    if (!isFinite(n)) continue
+    outCloses.push(n)
+    var ts = finiteOrNull(stamps[i])
+    outStamps.push(ts)
   }
-  return out
+  return { closes: outCloses, timestamps: outStamps }
+}
+
+function numericCloses(indicators) {
+  return chartSeries({ indicators: indicators, timestamp: [] }).closes
 }
 
 function quoteFromChart(result, fallbackSymbol) {
@@ -359,6 +369,7 @@ function quoteFromChart(result, fallbackSymbol) {
   }
   var openPx = finiteOrNull(meta.regularMarketOpen)
   if (openPx === 0) openPx = null
+  var series = chartSeries(result)
 
   return {
     symbol: symbol,
@@ -382,7 +393,8 @@ function quoteFromChart(result, fallbackSymbol) {
     fiftyTwoWeekLow: finiteOrNull(meta.fiftyTwoWeekLow),
     priceHint: meta.priceHint,
     yahooRange: meta.range ? String(meta.range) : "",
-    closes: numericCloses(result.indicators)
+    closes: series.closes,
+    timestamps: series.timestamps
   }
 }
 
@@ -700,6 +712,30 @@ function formatIsoDate(iso) {
   return months[month] + " " + day + ", " + parts[0]
 }
 
+function isIntradayRange(rangeKey) {
+  var interval = String(chartSpec(rangeKey).interval || "")
+  return /[mh]$/.test(interval)
+}
+
+function formatHoverDate(timestamp, rangeKey) {
+  var sec = finiteOrNull(timestamp)
+  if (sec === null) return ""
+  var ms = sec >= 1e12 ? sec : sec * 1000
+  var date = new Date(ms)
+  if (!isFinite(date.getTime())) return ""
+  var months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  var month = months[date.getMonth()]
+  var day = date.getDate()
+  var year = date.getFullYear()
+  if (isIntradayRange(rangeKey)) {
+    function pad(value) {
+      return value < 10 ? "0" + value : String(value)
+    }
+    return month + " " + day + ", " + pad(date.getHours()) + ":" + pad(date.getMinutes())
+  }
+  return month + " " + day + ", " + year
+}
+
 function yieldPercent(value) {
   var n = finiteOrNull(value)
   if (n === null || n === 0) return "-"
@@ -819,6 +855,9 @@ if (typeof module !== "undefined") {
     parseInsights: parseInsights,
     isInsightsResponse: isInsightsResponse,
     formatIsoDate: formatIsoDate,
+    isIntradayRange: isIntradayRange,
+    formatHoverDate: formatHoverDate,
+    chartSeries: chartSeries,
     buildDetailStats: buildDetailStats
   }
 }

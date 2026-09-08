@@ -179,6 +179,16 @@ test("sparklines cache normalized geometry for paint and hover", () => {
   assert.match(sparkline, /var g = root\.cachedGeometry/)
   assert.match(sparkline, /onValuesChanged:\s*refreshGeometry\(\)/)
   assert.match(sparkline, /onPadChanged:\s*refreshGeometry\(\)/)
+  assert.match(sparkline, /property var timestamps:\s*\[\]/)
+  assert.match(sparkline, /property string rangeKey:/)
+  assert.match(sparkline, /Model\.formatHoverDate/)
+  assert.match(sparkline, /id:\s*badgeDate/)
+})
+
+test("detail chart passes timestamps into the interactive sparkline", () => {
+  const detail = fs.readFileSync(source("FinanceDetailView.qml"), "utf8")
+  assert.match(detail, /timestamps:\s*controller\.rangeChart && controller\.rangeChart\.timestamps/)
+  assert.match(detail, /rangeKey:\s*controller\.detailRange/)
 })
 
 test("detail price changes use tone-colored text without pill backgrounds", () => {

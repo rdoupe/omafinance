@@ -318,6 +318,8 @@ Column {
         width: parent.width
         height: Style.space(140)
         values: controller.rangeChart && controller.rangeChart.closes ? controller.rangeChart.closes : []
+        timestamps: controller.rangeChart && controller.rangeChart.timestamps ? controller.rangeChart.timestamps : []
+        rangeKey: controller.detailRange
         lineColor: controller.toneColor(controller.detailRangeChange)
         fillColor: Qt.rgba(lineColor.r, lineColor.g, lineColor.b, 0.18)
         interactive: true

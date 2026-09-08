@@ -16,10 +16,13 @@ Item {
   property bool interactive: false
   property string currency: "USD"
   property var priceHint: 2
+  property var timestamps: []
+  property string rangeKey: "1D"
 
   property bool hovering: false
   property int hoverIndex: -1
   property real hoverValue: Number.NaN
+  property string hoverDate: ""
   property real hoverX: 0
   property real hoverY: 0
   property real hoverPointerX: 0
@@ -137,6 +140,8 @@ Item {
     var idx = Math.round(t * Math.max(0, g.nums.length - 1))
     hoverIndex = idx
     hoverValue = g.nums[idx]
+    var stamps = root.timestamps || []
+    hoverDate = Model.formatHoverDate(idx >= 0 && idx < stamps.length ? stamps[idx] : null, root.rangeKey)
     hoverX = g.xs[idx]
     hoverY = g.ys[idx]
     hovering = true
@@ -146,6 +151,7 @@ Item {
     hovering = false
     hoverIndex = -1
     hoverValue = Number.NaN
+    hoverDate = ""
   }
 
   Canvas {
@@ -211,6 +217,8 @@ Item {
 
   Component.onCompleted: refreshGeometry()
   onValuesChanged: refreshGeometry()
+  onTimestampsChanged: { if (hovering) updateHover(hoverPointerX) }
+  onRangeKeyChanged: { if (hovering) updateHover(hoverPointerX) }
   onLineColorChanged: canvas.requestPaint()
   onFillColorChanged: canvas.requestPaint()
   onZeroLineColorChanged: canvas.requestPaint()
@@ -256,22 +264,41 @@ Item {
     readonly property int maxX: Math.max(0, root.width - width)
     x: Math.min(maxX, Math.max(0, root.hoverX - width / 2))
     y: Math.max(0, Math.min(root.hoverY - height - Style.space(8), root.height - height))
-    radius: height / 2
+    radius: Style.space(10)
     color: Color.popups.background
     border.width: 1
     border.color: Qt.rgba(Color.popups.text.r, Color.popups.text.g, Color.popups.text.b, 0.14)
-    implicitWidth: badgeLabel.implicitWidth + Style.space(12)
-    implicitHeight: badgeLabel.implicitHeight + Style.space(6)
+    implicitWidth: badgeColumn.implicitWidth + Style.space(12)
+    implicitHeight: badgeColumn.implicitHeight + Style.space(6)
 
-    Text {
-      id: badgeLabel
+    Column {
+      id: badgeColumn
       anchors.centerIn: parent
-      textFormat: Text.PlainText
-      text: Model.formatPrice(root.hoverValue, root.currency, root.priceHint)
-      color: Color.popups.text
-      font.family: Style.font.family
-      font.pixelSize: Style.font.bodySmall
-      font.bold: true
+      spacing: Style.space(1)
+
+      Text {
+        id: badgeDate
+        visible: root.hoverDate !== ""
+        width: Math.max(implicitWidth, badgePrice.implicitWidth)
+        horizontalAlignment: Text.AlignHCenter
+        textFormat: Text.PlainText
+        text: root.hoverDate
+        color: Qt.rgba(Color.popups.text.r, Color.popups.text.g, Color.popups.text.b, 0.72)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+
+      Text {
+        id: badgePrice
+        width: Math.max(implicitWidth, badgeDate.visible ? badgeDate.implicitWidth : implicitWidth)
+        horizontalAlignment: Text.AlignHCenter
+        textFormat: Text.PlainText
+        text: Model.formatPrice(root.hoverValue, root.currency, root.priceHint)
+        color: Color.popups.text
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+        font.bold: true
+      }
     }
   }
 }

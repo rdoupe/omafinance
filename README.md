@@ -14,7 +14,7 @@
 - **Search** - look up a ticker, open it, then Favorite to keep it
 - **Crypto** - Yahoo-style symbols such as `BTC-USD` and `ETH-USD`
 - **Pin rotation** - pin several tickers; the bar cycles them every 5 seconds
-- **Detail chart** - `1D` `1W` `1M` `YTD` `1Y` `5Y` `All`, with range % and hover price
+- **Detail chart** - `1D` `1W` `1M` `YTD` `1Y` `5Y` `All`, with range % and hover price/date
 - **Fundamentals** - market cap, P/E, dividends, next earnings, 52-week range, target, rating
 - **Remembered prefs** - watchlist, pins, and last chart range
 
@@ -64,7 +64,7 @@ Your watchlist file is left in place (see Data below).
 | Pin | Add or remove it from the bar rotation |
 | Remove | Drop it from the watchlist |
 | Click a watchlist row | Open the detail chart |
-| Hover the detail chart | Price badge at that point |
+| Hover the detail chart | Price and date badge at that point |
 | Esc | Back to the list, or close |
 
 Keyboard while the panel is open: `/` to search, `p` to pin the selected row, Esc to go back.

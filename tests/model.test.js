@@ -110,6 +110,7 @@ test("chart parser does not turn missing quote fields into zero", () => {
           fulldayPrice: null,
           fulldayChangePercent: null
         },
+        timestamp: [100, 200, 300, 400],
         indicators: { quote: [{ close: [null, 10, undefined, 11] }] }
       }]
     }
@@ -122,6 +123,7 @@ test("chart parser does not turn missing quote fields into zero", () => {
   assert.equal(quote.regularChangePercent, null)
   assert.equal(quote.extendedPrice, null)
   assert.deepEqual(quote.closes, [10, 11])
+  assert.deepEqual(quote.timestamps, [200, 400])
 })
 
 test("chart parser calculates change when Yahoo omits the percentage", () => {

@@ -138,8 +138,11 @@ function create(Model) {
             return null;
         var points = series.points;
         var closes = [];
-        for (var i = 0; i < points.length; i++)
+        var timestamps = [];
+        for (var i = 0; i < points.length; i++) {
             closes.push(points[i].value);
+            timestamps.push(points[i].date);
+        }
 
         var last = closes[closes.length - 1];
         var prev = closes.length > 1 ? closes[closes.length - 2] : null;
@@ -171,7 +174,8 @@ function create(Model) {
             fiftyTwoWeekLow: null,
             priceHint: 2,
             asOf: points[points.length - 1].date,
-            closes: closes
+            closes: closes,
+            timestamps: timestamps
         };
     }
 

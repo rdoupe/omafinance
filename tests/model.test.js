@@ -24,11 +24,7 @@ test("detail stats are grouped into sections with labeled rows", () => {
   assert.equal(sections.length, 1)
   assert.equal(sections[0].title, "", "a single untitled section keeps the pane additive")
   const labels = sections[0].rows.map(r => r.label)
-  assert.ok(labels.includes("MARKET CAP"))
-  assert.ok(labels.includes("P/E"))
-  assert.ok(labels.includes("BETA"))
-  assert.ok(labels.includes("RATING"))
-  assert.ok(labels.includes("52W HIGH"))
+  assert.deepEqual(labels, ["MARKET CAP", "P/E", "52W HIGH", "52W LOW", "BETA", "RATING"])
   assert.ok(sections[0].rows.every(r => typeof r.label === "string" && typeof r.value === "string"))
 })
 
@@ -160,6 +156,37 @@ test("chart parser calculates change when Yahoo omits the percentage", () => {
   const quote = Yahoo.parseChart(raw)
   assert.equal(quote.price, 105)
   assert.equal(quote.changePercent, 5)
+})
+
+test("chart parser keeps Yahoo's reported extended change while calculating the comparison", () => {
+  const now = Math.floor(Date.now() / 1000)
+  const raw = JSON.stringify({
+    chart: {
+      result: [{
+        meta: {
+          symbol: "TEST",
+          regularMarketPrice: 100,
+          regularMarketChange: 2,
+          chartPreviousClose: 98,
+          fulldayPrice: 102,
+          fulldayChange: 2,
+          fulldayChangePercent: 1.75,
+          hasPrePostMarketData: true,
+          currentTradingPeriod: { post: { start: now - 60, end: now + 60 } },
+          currency: "USD"
+        },
+        indicators: { quote: [{ close: [98, 100] }] }
+      }]
+    }
+  })
+
+  const quote = Yahoo.parseChart(raw)
+  assert.equal(quote.price, 102)
+  assert.equal(quote.change, 2)
+  assert.equal(quote.changePercent, 1.75)
+  assert.equal(quote.extendedChangePercent, 2)
+  assert.equal(quote.hasExtended, true)
+  assert.equal(quote.session, "post")
 })
 
 test("chart parser preserves the instrument type the meta declares", () => {

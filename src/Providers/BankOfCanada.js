@@ -95,23 +95,21 @@ function create(Model) {
         return { argv: ["curl", "-fsS", "--max-time", "10", url(ids, query)], ids: ids.slice() };
     }
 
-    // Rebuilds one dense, date-ascending series per id out of the sparse rows.
-    function seriesFrom(payload) {
-        var detail = (payload && payload.seriesDetail) || {};
-        var rows = (payload && payload.observations) || [];
+    function seriesFromDetail(detail) {
         var byId = {};
-        var id;
-
-        for (id in detail) {
+        for (var id in detail) {
             if (Object.prototype.hasOwnProperty.call(detail, id))
                 byId[id] = { id: id, label: String(detail[id].label || id), points: [] };
         }
+        return byId;
+    }
 
+    function appendObservations(byId, rows) {
         for (var i = 0; i < rows.length; i++) {
             var row = rows[i];
             if (!row || !row.d)
                 continue;
-            for (id in row) {
+            for (var id in row) {
                 if (id === "d" || !Object.prototype.hasOwnProperty.call(row, id))
                     continue;
                 if (!byId[id])
@@ -122,14 +120,25 @@ function create(Model) {
                 byId[id].points.push({ date: String(row.d), value: value });
             }
         }
+    }
 
-        for (id in byId) {
+    function sortSeries(byId) {
+        for (var id in byId) {
             if (Object.prototype.hasOwnProperty.call(byId, id)) {
                 byId[id].points.sort(function (a, b) {
                     return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0);
                 });
             }
         }
+    }
+
+    // Rebuilds one dense, date-ascending series per id out of the sparse rows.
+    function seriesFrom(payload) {
+        var detail = (payload && payload.seriesDetail) || {};
+        var rows = (payload && payload.observations) || [];
+        var byId = seriesFromDetail(detail);
+        appendObservations(byId, rows);
+        sortSeries(byId);
         return byId;
     }
 

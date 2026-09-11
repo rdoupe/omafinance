@@ -116,6 +116,20 @@ function create(Model) {
       return "closed"
     }
 
+    function searchResult(row) {
+      if (!row || !row.symbol) return null
+      var type = String(row.quoteType || "")
+      if (type === "OPTION") return null
+      var symbol = normalizeSymbol(row.symbol)
+      if (!symbol) return null
+      return {
+        symbol: symbol,
+        name: String(row.shortname || row.longname || symbol),
+        type: type,
+        exchange: String(row.exchDisp || row.exchange || "")
+      }
+    }
+
     function parseSearch(raw) {
       try {
         var data = JSON.parse(String(raw || "{}"))
@@ -123,19 +137,10 @@ function create(Model) {
         var out = []
         var seen = {}
         for (var i = 0; i < quotes.length; i++) {
-          var row = quotes[i]
-          if (!row || !row.symbol) continue
-          var type = String(row.quoteType || "")
-          if (type === "OPTION") continue
-          var symbol = normalizeSymbol(row.symbol)
-          if (!symbol || seen[symbol]) continue
-          seen[symbol] = true
-          out.push({
-            symbol: symbol,
-            name: String(row.shortname || row.longname || symbol),
-            type: type,
-            exchange: String(row.exchDisp || row.exchange || "")
-          })
+          var result = searchResult(quotes[i])
+          if (!result || seen[result.symbol]) continue
+          seen[result.symbol] = true
+          out.push(result)
         }
         return out
       } catch (e) {
@@ -155,6 +160,52 @@ function create(Model) {
       return out
     }
 
+    function previousCloseFrom(meta) {
+      var previousClose = finiteOrNull(meta.chartPreviousClose)
+      if (previousClose === null) previousClose = finiteOrNull(meta.previousClose)
+      return previousClose
+    }
+
+    function regularChangePercent(meta, regularPrice, previousClose) {
+      var percent = finiteOrNull(meta.regularMarketChangePercent)
+      if (percent === null && regularPrice != null && previousClose !== null && previousClose !== 0)
+        return ((regularPrice - previousClose) / previousClose) * 100
+      return percent
+    }
+
+    function extendedQuoteState(meta, regularPrice, fullDayPrice) {
+      var fullDayPercent = finiteOrNull(meta.fulldayChangePercent)
+      var calculatedPercent = null
+      if (regularPrice && fullDayPrice != null && regularPrice !== 0)
+        calculatedPercent = ((fullDayPrice - regularPrice) / regularPrice) * 100
+      if (calculatedPercent == null && isFinite(fullDayPercent)) calculatedPercent = fullDayPercent
+
+      var session = sessionFromMeta(meta)
+      var hasExtended = !!meta.hasPrePostMarketData && fullDayPrice != null && regularPrice != null
+        && Math.abs(fullDayPrice - regularPrice) >= 0.005
+      return {
+        session: session,
+        hasExtended: hasExtended,
+        useExtended: hasExtended && session !== "regular" && session !== "live",
+        calculatedPercent: calculatedPercent,
+        reportedPercent: fullDayPercent != null ? fullDayPercent : calculatedPercent
+      }
+    }
+
+    function quoteChangeAmount(meta, useExtended, regularPrice, fullDayPrice, previousClose) {
+      if (useExtended) {
+        var extendedChange = finiteOrNull(meta.fulldayChange)
+        if (extendedChange == null && fullDayPrice != null && regularPrice != null)
+          return fullDayPrice - regularPrice
+        return extendedChange
+      }
+
+      var regularChange = finiteOrNull(meta.regularMarketChange)
+      if (regularChange == null && regularPrice != null && isFinite(previousClose))
+        return regularPrice - previousClose
+      return regularChange
+    }
+
     function quoteFromChart(result, fallbackSymbol) {
       if (!result || !result.meta) return null
       var meta = result.meta
@@ -162,35 +213,13 @@ function create(Model) {
       if (!symbol) return null
 
       var regularPrice = finiteOrNull(meta.regularMarketPrice)
-      var prev = finiteOrNull(meta.chartPreviousClose)
-      if (prev === null) prev = finiteOrNull(meta.previousClose)
-      var regularPct = finiteOrNull(meta.regularMarketChangePercent)
-      if (regularPct === null && regularPrice != null && prev !== null && prev !== 0)
-        regularPct = ((regularPrice - prev) / prev) * 100
-
-      var fullday = finiteOrNull(meta.fulldayPrice)
-      var fulldayPct = finiteOrNull(meta.fulldayChangePercent)
-      var session = sessionFromMeta(meta)
-      var hasPrePost = !!meta.hasPrePostMarketData
-      var extendedPct = null
-      if (regularPrice && fullday != null && regularPrice !== 0)
-        extendedPct = ((fullday - regularPrice) / regularPrice) * 100
-      if (extendedPct == null && isFinite(fulldayPct)) extendedPct = fulldayPct
-      var hasExtended = hasPrePost && fullday != null && regularPrice != null
-        && Math.abs(fullday - regularPrice) >= 0.005
-      var useExtended = hasExtended && session !== "regular" && session !== "live"
-      var latest = useExtended ? fullday : regularPrice
-      var latestPct = useExtended ? (fulldayPct != null ? fulldayPct : extendedPct) : regularPct
-      var latestChange = null
-      if (useExtended) {
-        latestChange = finiteOrNull(meta.fulldayChange)
-        if (latestChange == null && fullday != null && regularPrice != null)
-          latestChange = fullday - regularPrice
-      } else {
-        latestChange = finiteOrNull(meta.regularMarketChange)
-        if (latestChange == null && regularPrice != null && isFinite(prev))
-          latestChange = regularPrice - prev
-      }
+      var previousClose = previousCloseFrom(meta)
+      var regularPercent = regularChangePercent(meta, regularPrice, previousClose)
+      var fullDayPrice = finiteOrNull(meta.fulldayPrice)
+      var extended = extendedQuoteState(meta, regularPrice, fullDayPrice)
+      var latest = extended.useExtended ? fullDayPrice : regularPrice
+      var latestPercent = extended.useExtended ? extended.reportedPercent : regularPercent
+      var latestChange = quoteChangeAmount(meta, extended.useExtended, regularPrice, fullDayPrice, previousClose)
       var openPx = finiteOrNull(meta.regularMarketOpen)
       if (openPx === 0) openPx = null
 
@@ -200,15 +229,15 @@ function create(Model) {
         instrument: meta.instrumentType ? String(meta.instrumentType) : "",
         currency: String(meta.currency || "USD"),
         price: latest,
-        previousClose: prev,
+        previousClose: previousClose,
         change: latestChange,
-        changePercent: latestPct,
+        changePercent: latestPercent,
         regularPrice: regularPrice,
-        regularChangePercent: regularPct,
-        extendedPrice: fullday,
-        extendedChangePercent: extendedPct,
-        hasExtended: hasExtended,
-        session: session,
+        regularChangePercent: regularPercent,
+        extendedPrice: fullDayPrice,
+        extendedChangePercent: extended.calculatedPercent,
+        hasExtended: extended.hasExtended,
+        session: extended.session,
         dayHigh: finiteOrNull(meta.regularMarketDayHigh),
         dayLow: finiteOrNull(meta.regularMarketDayLow),
         volume: finiteOrNull(meta.regularMarketVolume),
@@ -322,23 +351,33 @@ function create(Model) {
       }
     }
 
+    function objectOrEmpty(value) {
+      return value && typeof value === "object" ? value : {}
+    }
+
+    function stringOrEmpty(value) {
+      return value ? String(value) : ""
+    }
+
     function parseInsights(raw) {
       try {
         var data = JSON.parse(String(raw || "{}"))
-        var result = data.finance && data.finance.result ? data.finance.result : null
-        if (!result) return {}
-        var rec = result.recommendation || {}
-        var valuation = result.instrumentInfo && result.instrumentInfo.valuation ? result.instrumentInfo.valuation : {}
-        var technicals = result.instrumentInfo && result.instrumentInfo.keyTechnicals ? result.instrumentInfo.keyTechnicals : {}
-        var snapshot = result.companySnapshot || {}
+        var finance = objectOrEmpty(data.finance)
+        if (!finance.result) return {}
+        var result = objectOrEmpty(finance.result)
+        var rec = objectOrEmpty(result.recommendation)
+        var instrumentInfo = objectOrEmpty(result.instrumentInfo)
+        var valuation = objectOrEmpty(instrumentInfo.valuation)
+        var technicals = objectOrEmpty(instrumentInfo.keyTechnicals)
+        var snapshot = objectOrEmpty(result.companySnapshot)
         return {
-          rating: rec.rating ? String(rec.rating) : "",
+          rating: stringOrEmpty(rec.rating),
           targetPrice: finiteOrNull(rec.targetPrice),
-          valuation: valuation.description ? String(valuation.description) : "",
-          valuationDiscount: valuation.discount ? String(valuation.discount) : "",
+          valuation: stringOrEmpty(valuation.description),
+          valuationDiscount: stringOrEmpty(valuation.discount),
           support: finiteOrNull(technicals.support),
           resistance: finiteOrNull(technicals.resistance),
-          sector: snapshot.sectorInfo ? String(snapshot.sectorInfo) : ""
+          sector: stringOrEmpty(snapshot.sectorInfo)
         }
       } catch (e) {
         return {}
@@ -361,9 +400,9 @@ function create(Model) {
       return n.toFixed(2) + "%"
     }
 
-    function formatRatio(value) {
+    function ratioOrEmpty(value) {
       var n = finiteOrNull(value)
-      if (n === null) return "-"
+      if (n === null) return ""
       return n.toFixed(2)
     }
 
@@ -393,44 +432,85 @@ function create(Model) {
       return months[month] + " " + day + ", " + parts[0]
     }
 
+    function addDetailRow(rows, label, value) {
+      if (value === undefined || value === null || value === "" || value === "-") return
+      rows.push({ label: label, value: String(value) })
+    }
+
+    function valuationRows(page) {
+      var rows = []
+      addDetailRow(rows, "MARKET CAP", page.marketCap ? formatCompact(page.marketCap) : "")
+      addDetailRow(rows, "P/E", ratioOrEmpty(page.trailingPE))
+      addDetailRow(rows, "FWD P/E", ratioOrEmpty(page.forwardPE))
+      addDetailRow(rows, "EPS", page.trailingEps != null && isFinite(Number(page.trailingEps)) ? Number(page.trailingEps).toFixed(2) : "")
+      return rows
+    }
+
+    function dividendRows(page, quote) {
+      var rows = []
+      var yieldText = yieldPercent(page.dividendYield)
+      addDetailRow(rows, "DIV YIELD", yieldText)
+      addDetailRow(rows, "DIV RATE", page.dividendRate ? formatPrice(page.dividendRate, quote.currency || "USD", 2) : "")
+      addDetailRow(rows, "EX-DIVIDEND", page.exDividendDate ? formatIsoDate(page.exDividendDate) : "")
+      var nextDiv = nextDividendIso(page.exDividendDate)
+      if (nextDiv.iso && nextDiv.estimated) addDetailRow(rows, "EST. NEXT DIV", formatIsoDate(nextDiv.iso))
+      else if (nextDiv.iso && page.exDividendDate && nextDiv.iso !== page.exDividendDate)
+        addDetailRow(rows, "NEXT DIVIDEND", formatIsoDate(nextDiv.iso))
+      addDetailRow(rows, "DIV PAY DATE", page.dividendDate ? formatIsoDate(page.dividendDate) : "")
+      return rows
+    }
+
+    function earningsRows(page) {
+      var rows = []
+      addDetailRow(rows, "NEXT EARNINGS", page.earningsDate ? ((page.earningsEstimated ? "Est. " : "") + formatIsoDate(page.earningsDate)) : "")
+      return rows
+    }
+
+    function marketRows(quote, page) {
+      var rows = []
+      addDetailRow(rows, "52W HIGH", quote.fiftyTwoWeekHigh ? formatPrice(quote.fiftyTwoWeekHigh, quote.currency, quote.priceHint) : "")
+      addDetailRow(rows, "52W LOW", quote.fiftyTwoWeekLow ? formatPrice(quote.fiftyTwoWeekLow, quote.currency, quote.priceHint) : "")
+      addDetailRow(rows, "AVG VOLUME", page.averageVolume ? formatCompact(page.averageVolume) : "")
+      addDetailRow(rows, "BETA", ratioOrEmpty(page.beta))
+      return rows
+    }
+
+    function analystRows(quote, page, insights) {
+      var rows = []
+      var target = insights.targetPrice || page.targetMeanPrice
+      addDetailRow(rows, "TARGET", target ? formatPrice(target, quote.currency || "USD", 2) : "")
+      addDetailRow(rows, "RATING", insights.rating ? String(insights.rating).toUpperCase() : "")
+      addDetailRow(rows, "VALUATION", insights.valuation || "")
+      addDetailRow(rows, "SUPPORT", insights.support ? formatPrice(insights.support, quote.currency, quote.priceHint) : "")
+      addDetailRow(rows, "RESISTANCE", insights.resistance ? formatPrice(insights.resistance, quote.currency, quote.priceHint) : "")
+      return rows
+    }
+
+    function companyRows(page, insights) {
+      var rows = []
+      addDetailRow(rows, "SECTOR", page.sector || insights.sector || "")
+      addDetailRow(rows, "INDUSTRY", page.industry || "")
+      return rows
+    }
+
+    function supplyRows(page) {
+      var rows = []
+      addDetailRow(rows, "SUPPLY", page.circulatingSupply ? formatCompact(page.circulatingSupply) : "")
+      addDetailRow(rows, "24H VOL", page.volume24Hr ? formatCompact(page.volume24Hr) : "")
+      return rows
+    }
+
     function buildDetailSections(quote, page, insights) {
       quote = quote || {}
       page = page || {}
       insights = insights || {}
-      var rows = []
-      function add(label, value) {
-        if (value === undefined || value === null || value === "") return
-        if (value === "-") return
-        rows.push({ label: label, value: String(value) })
-      }
-
-      add("MARKET CAP", page.marketCap ? formatCompact(page.marketCap) : "")
-      add("P/E", formatRatio(page.trailingPE) !== "-" ? formatRatio(page.trailingPE) : "")
-      add("FWD P/E", formatRatio(page.forwardPE) !== "-" ? formatRatio(page.forwardPE) : "")
-      add("EPS", page.trailingEps != null && isFinite(Number(page.trailingEps)) ? Number(page.trailingEps).toFixed(2) : "")
-      add("DIV YIELD", yieldPercent(page.dividendYield) !== "-" ? yieldPercent(page.dividendYield) : "")
-      add("DIV RATE", page.dividendRate ? formatPrice(page.dividendRate, quote.currency || "USD", 2) : "")
-      add("EX-DIVIDEND", page.exDividendDate ? formatIsoDate(page.exDividendDate) : "")
-      var nextDiv = nextDividendIso(page.exDividendDate)
-      if (nextDiv.iso && nextDiv.estimated) add("EST. NEXT DIV", formatIsoDate(nextDiv.iso))
-      else if (nextDiv.iso && page.exDividendDate && nextDiv.iso !== page.exDividendDate)
-        add("NEXT DIVIDEND", formatIsoDate(nextDiv.iso))
-      add("DIV PAY DATE", page.dividendDate ? formatIsoDate(page.dividendDate) : "")
-      add("NEXT EARNINGS", page.earningsDate ? ((page.earningsEstimated ? "Est. " : "") + formatIsoDate(page.earningsDate)) : "")
-      add("52W HIGH", quote.fiftyTwoWeekHigh ? formatPrice(quote.fiftyTwoWeekHigh, quote.currency, quote.priceHint) : "")
-      add("52W LOW", quote.fiftyTwoWeekLow ? formatPrice(quote.fiftyTwoWeekLow, quote.currency, quote.priceHint) : "")
-      add("AVG VOLUME", page.averageVolume ? formatCompact(page.averageVolume) : "")
-      add("BETA", formatRatio(page.beta) !== "-" ? formatRatio(page.beta) : "")
-      var target = insights.targetPrice || page.targetMeanPrice
-      add("TARGET", target ? formatPrice(target, quote.currency || "USD", 2) : "")
-      add("RATING", insights.rating ? String(insights.rating).toUpperCase() : "")
-      add("VALUATION", insights.valuation || "")
-      add("SUPPORT", insights.support ? formatPrice(insights.support, quote.currency, quote.priceHint) : "")
-      add("RESISTANCE", insights.resistance ? formatPrice(insights.resistance, quote.currency, quote.priceHint) : "")
-      add("SECTOR", page.sector || insights.sector || "")
-      add("INDUSTRY", page.industry || "")
-      add("SUPPLY", page.circulatingSupply ? formatCompact(page.circulatingSupply) : "")
-      add("24H VOL", page.volume24Hr ? formatCompact(page.volume24Hr) : "")
+      var rows = valuationRows(page)
+        .concat(dividendRows(page, quote))
+        .concat(earningsRows(page))
+        .concat(marketRows(quote, page))
+        .concat(analystRows(quote, page, insights))
+        .concat(companyRows(page, insights))
+        .concat(supplyRows(page))
       if (!rows.length) return []
       return [{ title: "", rows: rows }]
     }

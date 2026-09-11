@@ -347,6 +347,16 @@ function changeTone(pct) {
   return n > 0 ? "up" : "down"
 }
 
+function quoteValue(quote, key) {
+  if (!quote) return null
+  var value = quote[key]
+  return value === null || value === undefined ? null : value
+}
+
+function appendBarPart(parts, visible, value) {
+  if (visible !== false && value && value !== "-") parts.push(value)
+}
+
 // The first argument is a provider-supplied display label rather than a raw
 // symbol, so it is only trimmed - uppercasing would mangle names like "GoC 5Y".
 function barLabel(pinned, quote, vertical, showTicker, showPrice, showChange, style) {
@@ -354,14 +364,12 @@ function barLabel(pinned, quote, vertical, showTicker, showPrice, showChange, st
   if (!symbol) return "$"
   var parts = []
   if (showTicker !== false) parts.push(symbol)
-  var hasPrice = quote && quote.price !== null && quote.price !== undefined
-  var hasChange = quote && (style === "dollars"
-    ? quote.change !== null && quote.change !== undefined
-    : quote.changePercent !== null && quote.changePercent !== undefined)
-  var price = hasPrice ? formatPrice(quote.price, quote.currency, quote.priceHint) : ""
-  var change = hasChange ? formatQuoteChange(quote, style) : ""
-  if (showPrice !== false && price && price !== "-") parts.push(price)
-  if (showChange !== false && change && change !== "-") parts.push(change)
+  var priceValue = quoteValue(quote, "price")
+  var changeValue = quoteValue(quote, style === "dollars" ? "change" : "changePercent")
+  var price = priceValue === null ? "" : formatPrice(priceValue, quote.currency, quote.priceHint)
+  var change = changeValue === null ? "" : formatQuoteChange(quote, style)
+  appendBarPart(parts, showPrice, price)
+  appendBarPart(parts, showChange, change)
   return parts.length ? parts.join(vertical ? "\n" : "  ") : "$"
 }
 
@@ -433,6 +441,13 @@ function numericSeries(closes, timestamps) {
 
 var MS_PER_YEAR = 365 * 86400000
 
+function firstTimestampAtOrAfter(ts, end, startTime) {
+  for (var i = 0; i <= end; i++) {
+    if (ts[i] != null && ts[i] >= startTime) return i
+  }
+  return -1
+}
+
 // Trailing annualized return (CAGR) over a horizon measured in whole years,
 // ending at the last sample. Null when history does not reach back that far.
 function trailingCagr(nums, ts, years) {
@@ -441,13 +456,7 @@ function trailingCagr(nums, ts, years) {
   var endTime = ts[end]
   if (endTime == null) return null
   var startTime = endTime - years * MS_PER_YEAR
-  var start = -1
-  for (var i = 0; i <= end; i++) {
-    if (ts[i] != null && ts[i] >= startTime) {
-      start = i
-      break
-    }
-  }
+  var start = firstTimestampAtOrAfter(ts, end, startTime)
   if (start < 0 || start >= end) return null
   var first = nums[start]
   var last = nums[end]

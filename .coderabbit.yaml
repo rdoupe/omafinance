@@ -1,0 +1,31 @@
+language: en-US
+tone_instructions: "Be direct and concise. Prioritize concrete behavioral regressions, safety risks, and missing tests over style preferences."
+enable_free_tier: true
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  poem: false
+  enable_prompt_for_ai_agents: true
+  path_filters:
+    - "!metrics/complexity.json"
+  path_instructions:
+    - path: "src/**/*.js"
+      instructions: "Check provider contracts, null and zero handling, persisted-state compatibility, and whether extracted helpers preserve observable behavior."
+    - path: "src/**/*.qml"
+      instructions: "Check binding loops, lifecycle and process cleanup, keyboard and pointer behavior, and desktop-visible regressions."
+    - path: "tests/**/*.test.js"
+      instructions: "Check that assertions cover behavior rather than implementation details and include important fallback paths."
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+    drafts: false
+
+chat:
+  auto_reply: true
+
+tools:
+  eslint:
+    enabled: false

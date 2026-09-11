@@ -141,8 +141,11 @@ function create(Model) {
         if (!series || !series.points.length)
             return null;
         var closes = [];
-        for (var i = 0; i < series.points.length; i++)
+        var timestamps = [];
+        for (var i = 0; i < series.points.length; i++) {
             closes.push(series.points[i].value);
+            timestamps.push(series.points[i].date);
+        }
 
         var last = closes[closes.length - 1];
         var prev = closes.length > 1 ? closes[closes.length - 2] : null;
@@ -172,7 +175,8 @@ function create(Model) {
             // FX needs more precision than a two-decimal price.
             priceHint: 4,
             asOf: series.points[series.points.length - 1].date,
-            closes: closes
+            closes: closes,
+            timestamps: timestamps
         };
     }
 

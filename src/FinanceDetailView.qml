@@ -172,7 +172,7 @@ Column {
             text: controller.activeQuote && controller.activeQuote.name ? controller.activeQuote.name : ""
             color: controller.contentForeground
             font.family: controller.contentFontFamily
-            font.pixelSize: Style.font.heading
+            font.pixelSize: Model.detailCompanyFontSize(Style.font)
             elide: Text.ElideRight
         }
 

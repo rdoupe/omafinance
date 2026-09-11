@@ -282,6 +282,17 @@ test("instrument types map to the classes the pane renders differently", () => {
   assert.equal(Model.instrumentClass(null), "")
 })
 
+test("instrument labels hide unknown types and name the classes the pane shows", () => {
+  assert.equal(Model.instrumentLabel("EQUITY"), "Stock")
+  assert.equal(Model.instrumentLabel("ETF"), "ETF")
+  assert.equal(Model.instrumentLabel("CRYPTOCURRENCY"), "Cryptocurrency")
+  assert.equal(Model.instrumentLabel("RATE"), "Rate")
+  assert.equal(Model.instrumentLabel("FX"), "Exchange rate")
+  assert.equal(Model.instrumentLabel("BOND"), "")
+  assert.equal(Model.instrumentLabel(""), "")
+  assert.equal(Model.instrumentLabel(null), "")
+})
+
 function monthlySeries(months, yearlyGrowth) {
   const step = 365 * 86400000 / 12
   const start = 1577836800000 // 2020-01-01 UTC
@@ -370,4 +381,39 @@ test("usable history requires two aligned finite close and timestamp pairs", () 
   assert.equal(Model.usableHistoryPairs([10, 11], [1000, null]), 1)
   assert.equal(Model.usableHistoryPairs([null, 11], [1000, 2000]), 1)
   assert.equal(Model.usableHistoryPairs([10, 11], [null, ""]), 0)
+})
+
+test("numericSeries skips a finite close whose timestamp is missing", () => {
+  const series = Model.numericSeries([10, 11, 12], [1000, 2000, null])
+  assert.deepEqual(series.closes, [10, 11])
+  assert.deepEqual(series.timestamps, [1000000, 2000000])
+  assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, null]), 2)
+  assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, ""]), 2)
+
+  const base = 1577836800000
+  const summary = Model.performance([100, 120, 90], [base, base + 86400000, null])
+  assert.equal(summary.drawdown, 0, "an undated close must not enter the drawdown")
+  assert.ok(Math.abs(summary.offHigh) < 0.001, "the latest dated print is the high")
+})
+
+test("detail pane presentation uses instrument labels, values, and tone", () => {
+  const s = monthlySeries(24, 1.0)
+  const rows = Model.performanceStats(s)
+  assert.equal(Model.instrumentLabel("ETF"), "ETF")
+  assert.ok(rows.length > 0)
+  const y1 = rows.find(r => r.label === "1Y")
+  assert.ok(y1)
+  assert.match(y1.value, /%$/)
+  assert.equal(Model.changeTone(y1.change), "up")
+  const drawdown = rows.find(r => r.label === "MAX DRAWDOWN")
+  assert.ok(drawdown)
+  assert.equal(Model.changeTone(drawdown.change), "flat")
+})
+
+test("detail pane hides performance and instrument rows when they are empty", () => {
+  assert.deepEqual(Model.performanceStats(null), [])
+  assert.deepEqual(Model.performanceStats(undefined), [])
+  assert.deepEqual(Model.performanceStats({ closes: [], timestamps: [] }), [])
+  assert.equal(Model.instrumentLabel(""), "")
+  assert.equal(Model.instrumentLabel("BOND"), "")
 })

@@ -408,6 +408,28 @@ function instrumentClass(type) {
   return ""
 }
 
+// Human label for the active instrument class, so the pane can say "ETF" or
+// "Cryptocurrency" next to the name and hide the row when the type is unknown.
+function instrumentLabel(type) {
+  switch (instrumentClass(type)) {
+    case "equity": return "Stock"
+    case "etf": return "ETF"
+    case "crypto": return "Cryptocurrency"
+    case "rate": return "Rate"
+    case "fx": return "Exchange rate"
+    default: return ""
+  }
+}
+
+// Detail company name uses the heading role so it reads larger than the ticker.
+var DETAIL_COMPANY_FONT_ROLE = "heading"
+
+function detailCompanyFontSize(styleFont) {
+  if (!styleFont) return null
+  var size = styleFont[DETAIL_COMPANY_FONT_ROLE]
+  return size == null ? null : size
+}
+
 // A snapshot date may arrive as a Yahoo epoch (seconds or milliseconds) or as an
 // ISO "YYYY-MM-DD" string; both collapse to epoch milliseconds.
 function timestampMs(value) {
@@ -433,8 +455,10 @@ function numericSeries(closes, timestamps) {
   for (var i = 0; i < src.length; i++) {
     var n = finiteOrNull(src[i])
     if (n === null) continue
+    var timestamp = timestampMs(times[i])
+    if (timestamp === null) continue
     nums.push(n)
-    ts.push(timestampMs(times[i]))
+    ts.push(timestamp)
   }
   return { closes: nums, timestamps: ts }
 }
@@ -479,12 +503,14 @@ function trailingCagr(nums, ts, years) {
 // Count close/timestamp pairs that performance can actually use. A symbol-valid
 // chart quote can still have one print, or closes with no dates.
 function usableHistoryPairs(closes, timestamps) {
-  var series = numericSeries(closes, timestamps)
-  var count = 0
-  for (var i = 0; i < series.closes.length; i++) {
-    if (series.timestamps[i] != null) count++
-  }
-  return count
+  return numericSeries(closes, timestamps).closes.length
+}
+
+// Long-term rows the detail pane binds: empty when there is no history object,
+// otherwise the formatted performance rows (unsupported horizons already dropped).
+function performanceStats(history) {
+  if (!history) return []
+  return performanceRows(history.closes, history.timestamps)
 }
 
 // Long-term performance for the whole instrument, independent of the chart range
@@ -583,8 +609,13 @@ if (typeof module !== "undefined") {
     suggestionMeta: suggestionMeta,
     isFavorite: isFavorite,
     instrumentClass: instrumentClass,
+    instrumentLabel: instrumentLabel,
+    DETAIL_COMPANY_FONT_ROLE: DETAIL_COMPANY_FONT_ROLE,
+    detailCompanyFontSize: detailCompanyFontSize,
+    numericSeries: numericSeries,
     performance: performance,
     performanceRows: performanceRows,
+    performanceStats: performanceStats,
     usableHistoryPairs: usableHistoryPairs,
   }
 }

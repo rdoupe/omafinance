@@ -341,26 +341,10 @@ Panel {
     // history fetch rather than the currently selected chart range. Rows the
     // history cannot support (a 10-year row on a 3-year-old ETF, for example)
     // are omitted so the section never shows a placeholder.
-    readonly property var performanceStats: {
-        var history = detailHistory;
-        if (!history)
-            return [];
-        return Model.performanceRows(history.closes, history.timestamps);
-    }
+    readonly property var performanceStats: Model.performanceStats(detailHistory)
     // Human label for the active instrument class, so the pane can say "ETF" or
     // "Cryptocurrency" next to the name and hide sections that do not apply.
-    readonly property string instrumentLabel: {
-        var quote = activeQuote;
-        var cls = quote ? Model.instrumentClass(quote.instrument) : "";
-        switch (cls) {
-            case "equity": return "Stock";
-            case "etf": return "ETF";
-            case "crypto": return "Cryptocurrency";
-            case "rate": return "Rate";
-            case "fx": return "Exchange rate";
-            default: return "";
-        }
-    }
+    readonly property string instrumentLabel: Model.instrumentLabel(activeQuote ? activeQuote.instrument : "")
     readonly property var detailRangeChange: Model.rangeChangePercent(rangeChart, effectiveDetailRange)
     readonly property var detailRangeChangeAmount: Model.rangeChangeAmount(rangeChart, effectiveDetailRange)
     readonly property var sessionQuote: quotes[detailSymbol] || rangeChart || activeQuote

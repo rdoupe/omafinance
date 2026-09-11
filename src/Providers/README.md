@@ -127,7 +127,9 @@ different range than the one requested; the panel drops responses where the two
 disagree. If your API serves exactly what it is asked, return `""` from both.
 
 `detailStats` receives a bag keyed by your own `detailRequests` kinds and returns
-`[{ label, value }]`. There are two detail process slots, so only the first two
+a list of sections: `[{ title, rows: [{ label, value }] }]`. A section with a
+non-empty `title` gets a small heading in the pane; a section with no rows may
+be omitted entirely. There are two detail process slots, so only the first two
 kinds you declare are fetched.
 
 ### The quote object

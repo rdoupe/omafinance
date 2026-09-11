@@ -459,35 +459,54 @@ Column {
         }
     }
 
-    Grid {
-        width: parent.width
-        columns: 3
-        columnSpacing: Style.space(16)
-        rowSpacing: Style.space(12)
+    Repeater {
+        model: controller.detailStats
 
-        Repeater {
-            model: controller.detailStats
+        Column {
+            required property var modelData
+            width: parent.width
+            spacing: Style.space(8)
 
-            Column {
-                required property var modelData
-                width: (detailViewRoot.width - Style.space(32)) / 3
-                spacing: Style.space(4)
+            Text {
+                visible: modelData.title !== ""
+                text: modelData.title
+                color: controller.dim
+                font.family: controller.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.letterSpacing: 1
+            }
 
-                Text {
-                    text: modelData.label
-                    color: controller.dim
-                    font.family: controller.contentFontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    font.letterSpacing: 1
-                }
-                Text {
-                    textFormat: Text.PlainText
-                    text: modelData.value
-                    color: controller.contentForeground
-                    font.family: controller.contentFontFamily
-                    font.pixelSize: Style.font.title
-                    wrapMode: Text.WordWrap
-                    width: parent.width
+            Grid {
+                width: parent.width
+                columns: 3
+                columnSpacing: Style.space(16)
+                rowSpacing: Style.space(12)
+
+                Repeater {
+                    model: modelData.rows
+
+                    Column {
+                        required property var modelData
+                        width: (detailViewRoot.width - Style.space(32)) / 3
+                        spacing: Style.space(4)
+
+                        Text {
+                            text: modelData.label
+                            color: controller.dim
+                            font.family: controller.contentFontFamily
+                            font.pixelSize: Style.font.bodySmall
+                            font.letterSpacing: 1
+                        }
+                        Text {
+                            textFormat: Text.PlainText
+                            text: modelData.value
+                            color: controller.contentForeground
+                            font.family: controller.contentFontFamily
+                            font.pixelSize: Style.font.title
+                            wrapMode: Text.WordWrap
+                            width: parent.width
+                        }
+                    }
                 }
             }
         }

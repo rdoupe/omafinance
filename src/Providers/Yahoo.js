@@ -393,7 +393,7 @@ function create(Model) {
       return months[month] + " " + day + ", " + parts[0]
     }
 
-    function buildDetailStats(quote, page, insights) {
+    function buildDetailSections(quote, page, insights) {
       quote = quote || {}
       page = page || {}
       insights = insights || {}
@@ -431,7 +431,8 @@ function create(Model) {
       add("INDUSTRY", page.industry || "")
       add("SUPPLY", page.circulatingSupply ? formatCompact(page.circulatingSupply) : "")
       add("24H VOL", page.volume24Hr ? formatCompact(page.volume24Hr) : "")
-      return rows
+      if (!rows.length) return []
+      return [{ title: "", rows: rows }]
     }
 
     return {
@@ -511,7 +512,7 @@ function create(Model) {
 
         detailStats: function (quote, data) {
             var bag = data || {};
-            return buildDetailStats(quote, bag.quotePage, bag.insights);
+            return buildDetailSections(quote, bag.quotePage, bag.insights);
         },
 
         // Yahoo silently substitutes a different range than the one requested;

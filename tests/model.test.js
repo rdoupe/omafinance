@@ -15,6 +15,23 @@ test("missing numeric values stay missing", () => {
   assert.deepEqual(Yahoo.detailStats({}, { quotePage: { beta: null }, insights: {} }), [])
 })
 
+test("detail stats are grouped into sections with labeled rows", () => {
+  const quote = { currency: "USD", priceHint: 2, fiftyTwoWeekHigh: 200, fiftyTwoWeekLow: 100 }
+  const sections = Yahoo.detailStats(quote, {
+    quotePage: { marketCap: 1000000000, trailingPE: 25, beta: 1.2 },
+    insights: { rating: "buy" }
+  })
+  assert.equal(sections.length, 1)
+  assert.equal(sections[0].title, "", "a single untitled section keeps the pane additive")
+  const labels = sections[0].rows.map(r => r.label)
+  assert.ok(labels.includes("MARKET CAP"))
+  assert.ok(labels.includes("P/E"))
+  assert.ok(labels.includes("BETA"))
+  assert.ok(labels.includes("RATING"))
+  assert.ok(labels.includes("52W HIGH"))
+  assert.ok(sections[0].rows.every(r => typeof r.label === "string" && typeof r.value === "string"))
+})
+
 test("zero remains a valid numeric value", () => {
   assert.equal(Model.formatPrice(0, "USD", 2), "$0.00")
   assert.equal(Model.formatPercent(0), "0.00%")

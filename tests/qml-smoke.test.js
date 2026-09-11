@@ -224,6 +224,10 @@ test("detail pane shows an instrument label and a long-term performance section"
   assert.match(panel, /Model\.performanceRows\(history\.closes, history\.timestamps\)/)
   assert.match(panel, /function startHistoryFetch\(\)[\s\S]*?chartRequest\(providerIdFor\(detailSymbol\), "All"\)/)
   assert.match(panel, /id:\s*historyProc[\s\S]*?parseChart\(historyStdout\.text, wantId, "All"\)/)
+  assert.match(panel, /usableHistoryPairs\(parsed\.closes, parsed\.timestamps\) >= 2/)
+  assert.match(panel, /historyFailureCount = Math\.min\(10, root\.historyFailureCount \+ 1\)/)
+  assert.match(panel, /backoffDelay\(5000, historyFailureCount, 120000\)/)
+  assert.match(panel, /running:\s*root\.opened && root\.view === "detail" && root\.historyError !== ""/)
   assert.match(panel, /readonly property string instrumentLabel:/)
 
   assert.match(detail, /visible:\s*controller\.instrumentLabel !== ""/)

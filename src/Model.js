@@ -440,12 +440,16 @@ function numericSeries(closes, timestamps) {
 }
 
 var MS_PER_YEAR = 365 * 86400000
+// Month-end series can sit a few weeks before a 365-day mark; anything wider
+// is a gap, not the start of this horizon.
+var MAX_CAGR_START_DEV_MS = 45 * 86400000
 
-function firstTimestampAtOrAfter(ts, end, startTime) {
+function lastTimestampAtOrBefore(ts, end, startTime) {
+  var found = -1
   for (var i = 0; i <= end; i++) {
-    if (ts[i] != null && ts[i] >= startTime) return i
+    if (ts[i] != null && ts[i] <= startTime) found = i
   }
-  return -1
+  return found
 }
 
 // Trailing annualized return (CAGR) over a horizon measured in whole years,
@@ -456,20 +460,31 @@ function trailingCagr(nums, ts, years) {
   var endTime = ts[end]
   if (endTime == null) return null
   var startTime = endTime - years * MS_PER_YEAR
-  var start = firstTimestampAtOrAfter(ts, end, startTime)
+  var start = lastTimestampAtOrBefore(ts, end, startTime)
   if (start < 0 || start >= end) return null
   var first = nums[start]
   var last = nums[end]
   var firstTime = ts[start]
   if (!first || !last || firstTime == null || firstTime >= endTime) return null
+  // At-or-before never undersizes the window; reject a start that is too old
+  // to represent this horizon (a multi-year gap labeled as 1Y).
+  if (startTime - firstTime > MAX_CAGR_START_DEV_MS) return null
   var elapsedYears = (endTime - firstTime) / MS_PER_YEAR
-  if (elapsedYears <= 0) return null
-  // Do not label a shorter stretch as a longer horizon: a two-year history
-  // cannot honestly produce a "3Y" figure, so it is omitted entirely.
-  if (elapsedYears < years * 0.9) return null
+  if (elapsedYears < years) return null
   var ratio = last / first
   if (ratio <= 0) return null
   return (Math.pow(ratio, 1 / elapsedYears) - 1) * 100
+}
+
+// Count close/timestamp pairs that performance can actually use. A symbol-valid
+// chart quote can still have one print, or closes with no dates.
+function usableHistoryPairs(closes, timestamps) {
+  var series = numericSeries(closes, timestamps)
+  var count = 0
+  for (var i = 0; i < series.closes.length; i++) {
+    if (series.timestamps[i] != null) count++
+  }
+  return count
 }
 
 // Long-term performance for the whole instrument, independent of the chart range
@@ -570,5 +585,6 @@ if (typeof module !== "undefined") {
     instrumentClass: instrumentClass,
     performance: performance,
     performanceRows: performanceRows,
+    usableHistoryPairs: usableHistoryPairs,
   }
 }

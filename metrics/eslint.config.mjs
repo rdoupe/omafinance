@@ -23,8 +23,8 @@ export default [
       }
     },
     rules: {
-      // Report every function's cyclomatic complexity (threshold 1 = list all).
-      complexity: ["warn", 1],
+      // Report every function's cyclomatic complexity (threshold 0 = list all).
+      complexity: ["warn", 0],
       "max-depth": ["warn", 4],
       "max-lines-per-function": ["warn", { max: 80, skipBlankLines: true, skipComments: true }],
       "max-statements": ["warn", 40],

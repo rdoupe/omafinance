@@ -197,6 +197,8 @@ Panel {
     property var detailHistory: null
     property string historyFetchSymbol: ""
     property bool historyLoaded: false
+    property int historyFailureCount: 0
+    property string historyError: ""
     property var detailCache: ({})
     property var detailCacheOrder: []
     readonly property int detailCacheTtlMs: 300000
@@ -247,6 +249,7 @@ Panel {
     readonly property int chartRefreshMs: Model.backoffDelay(15000, chartFailureCount, 120000)
     readonly property int insightsRetryMs: Model.backoffDelay(5000, insightsFailureCount, 120000)
     readonly property int quotePageRetryMs: Model.backoffDelay(5000, quotePageFailureCount, 120000)
+    readonly property int historyRetryMs: Model.backoffDelay(5000, historyFailureCount, 120000)
     readonly property bool searchRunning: searchProc.running
     readonly property string barSection: {
         var s = String(setting("barSection", "right") || "right");
@@ -878,6 +881,8 @@ Panel {
         detailHistory = null;
         historyFetchSymbol = "";
         historyLoaded = false;
+        historyFailureCount = 0;
+        historyError = "";
         restoreDetailCache(next);
         fetchDetail();
         return true;
@@ -1019,6 +1024,7 @@ Panel {
         if (!registry().isRequest(request))
             return;
         historyFetchSymbol = detailSymbol;
+        historyError = "";
         historyProc.command = request.argv;
         historyProc.running = true;
     }
@@ -1522,10 +1528,16 @@ Panel {
                 var parsed = (exitCode === 0 && provider) ? provider.parseChart(historyStdout.text, wantId, "All") : null;
                 var served = (parsed && provider.servedRange) ? provider.servedRange(parsed) : "";
                 var expected = (provider && provider.expectedRange) ? provider.expectedRange("All") : "";
-                var valid = parsed && parsed.symbol === wantId && (!served || !expected || served === expected);
+                var valid = parsed && parsed.symbol === wantId && (!served || !expected || served === expected)
+                    && Model.usableHistoryPairs(parsed.closes, parsed.timestamps) >= 2;
                 if (valid) {
                     root.detailHistory = parsed;
                     root.historyLoaded = true;
+                    root.historyFailureCount = 0;
+                    root.historyError = "";
+                } else {
+                    root.historyFailureCount = Math.min(10, root.historyFailureCount + 1);
+                    root.historyError = "History unavailable";
                 }
             }
             if (root.detailSymbol && root.historyFetchSymbol !== root.detailSymbol)
@@ -1666,6 +1678,13 @@ Panel {
         running: root.opened && root.view === "detail" && root.quotePageError !== ""
         repeat: false
         onTriggered: root.fetchQuotePage()
+    }
+
+    Timer {
+        interval: root.historyRetryMs
+        running: root.opened && root.view === "detail" && root.historyError !== ""
+        repeat: false
+        onTriggered: root.startHistoryFetch()
     }
 
     Timer {

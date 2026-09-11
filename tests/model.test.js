@@ -15,17 +15,19 @@ test("missing numeric values stay missing", () => {
   assert.deepEqual(Yahoo.detailStats({}, { quotePage: { beta: null }, insights: {} }), [])
 })
 
-test("detail stats are grouped into sections with labeled rows", () => {
+test("detail stats are grouped into titled domain sections", () => {
   const quote = { currency: "USD", priceHint: 2, fiftyTwoWeekHigh: 200, fiftyTwoWeekLow: 100 }
   const sections = Yahoo.detailStats(quote, {
     quotePage: { marketCap: 1000000000, trailingPE: 25, beta: 1.2 },
     insights: { rating: "buy" }
   })
-  assert.equal(sections.length, 1)
-  assert.equal(sections[0].title, "", "a single untitled section keeps the pane additive")
-  const labels = sections[0].rows.map(r => r.label)
-  assert.deepEqual(labels, ["MARKET CAP", "P/E", "52W HIGH", "52W LOW", "BETA", "RATING"])
-  assert.ok(sections[0].rows.every(r => typeof r.label === "string" && typeof r.value === "string"))
+  assert.deepEqual(sections.map(s => s.title), ["VALUATION", "MARKET", "ANALYST"])
+  assert.deepEqual(sections.map(s => s.rows.map(r => r.label)), [
+    ["MARKET CAP", "P/E"],
+    ["52W HIGH", "52W LOW", "BETA"],
+    ["RATING"]
+  ])
+  assert.ok(sections.every(s => s.rows.every(r => typeof r.label === "string" && typeof r.value === "string")))
 })
 
 test("zero remains a valid numeric value", () => {
@@ -137,6 +139,29 @@ test("chart parser does not turn missing quote fields into zero", () => {
   assert.equal(quote.extendedPrice, null)
   assert.deepEqual(quote.closes, [10, 11])
   assert.deepEqual(quote.timestamps, [200, 400])
+})
+
+test("chart parser does not treat a missing previous close as a zero basis", () => {
+  const raw = JSON.stringify({
+    chart: {
+      result: [{
+        meta: {
+          symbol: "TEST",
+          regularMarketPrice: 105,
+          regularMarketChange: null,
+          regularMarketChangePercent: null,
+          currency: "USD"
+        },
+        indicators: { quote: [{ close: [100, 105] }] }
+      }]
+    }
+  })
+
+  const quote = Yahoo.parseChart(raw)
+  assert.equal(quote.price, 105)
+  assert.equal(quote.previousClose, null)
+  assert.equal(quote.change, null)
+  assert.equal(quote.changePercent, null)
 })
 
 test("chart parser calculates change when Yahoo omits the percentage", () => {
@@ -310,4 +335,39 @@ test("performance rows are prerendered and drop unsupported horizons", () => {
   assert.ok(labels.includes("FROM HIGH"))
   assert.match(rows.find(r => r.label === "1Y").value, /%$/)
   assert.equal(typeof rows.find(r => r.label === "1Y").change, "number")
+})
+
+function calendarMonthEnds(year, monthIndex, count, yearlyGrowth) {
+  const closes = []
+  const stamps = []
+  for (let i = 0; i < count; i++) {
+    const y = year + Math.floor((monthIndex + i) / 12)
+    const m = (monthIndex + i) % 12
+    stamps.push(Date.UTC(y, m + 1, 0))
+    closes.push(100 * Math.pow(1 + yearlyGrowth, i / 12))
+  }
+  return { closes, timestamps: stamps }
+}
+
+test("1Y CAGR needs a full calendar year across a leap day", () => {
+  // Month-ends from 2020-01-31 through 2021-01-31 (2020 is a leap year).
+  const full = calendarMonthEnds(2020, 0, 13, 1.0)
+  const fullSummary = Model.performance(full.closes, full.timestamps)
+  assert.notEqual(fullSummary.y1, null, "Jan 2020 through Jan 2021 covers 1Y")
+
+  // History that begins on the leap day: 2020-02-29 through 2021-01-31.
+  const short = calendarMonthEnds(2020, 1, 12, 1.0)
+  const shortSummary = Model.performance(short.closes, short.timestamps)
+  assert.equal(shortSummary.y1, null, "Feb 2020 through Jan 2021 is not a full 1Y")
+
+  const elevenMonths = monthlySeries(11, 1.0)
+  assert.equal(Model.performance(elevenMonths.closes, elevenMonths.timestamps).y1, null)
+})
+
+test("usable history requires two aligned finite close and timestamp pairs", () => {
+  assert.equal(Model.usableHistoryPairs([10], [1000]), 1)
+  assert.equal(Model.usableHistoryPairs([10, 11], [1000, 2000]), 2)
+  assert.equal(Model.usableHistoryPairs([10, 11], [1000, null]), 1)
+  assert.equal(Model.usableHistoryPairs([null, 11], [1000, 2000]), 1)
+  assert.equal(Model.usableHistoryPairs([10, 11], [null, ""]), 0)
 })

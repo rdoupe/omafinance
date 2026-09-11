@@ -210,7 +210,7 @@ function create(Model) {
       }
 
       var regularChange = finiteOrNull(meta.regularMarketChange)
-      if (regularChange == null && regularPrice != null && isFinite(previousClose))
+      if (regularChange == null && regularPrice != null && previousClose !== null)
         return regularPrice - previousClose
       return regularChange
     }
@@ -524,15 +524,18 @@ function create(Model) {
       quote = quote || {}
       page = page || {}
       insights = insights || {}
-      var rows = valuationRows(page)
-        .concat(dividendRows(page, quote))
-        .concat(earningsRows(page))
-        .concat(marketRows(quote, page))
-        .concat(analystRows(quote, page, insights))
-        .concat(companyRows(page, insights))
-        .concat(supplyRows(page))
-      if (!rows.length) return []
-      return [{ title: "", rows: rows }]
+      var sections = []
+      function addSection(title, rows) {
+        if (rows && rows.length) sections.push({ title: title, rows: rows })
+      }
+      addSection("VALUATION", valuationRows(page))
+      addSection("DIVIDENDS", dividendRows(page, quote))
+      addSection("EARNINGS", earningsRows(page))
+      addSection("MARKET", marketRows(quote, page))
+      addSection("ANALYST", analystRows(quote, page, insights))
+      addSection("COMPANY", companyRows(page, insights))
+      addSection("SUPPLY", supplyRows(page))
+      return sections
     }
 
     return {

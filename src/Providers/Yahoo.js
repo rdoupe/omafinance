@@ -148,14 +148,23 @@ function create(Model) {
       }
     }
 
-    function numericCloses(indicators) {
+    function chartCloses(indicators) {
       var quote = indicators && indicators.quote && indicators.quote[0] ? indicators.quote[0] : null
-      var closes = quote && quote.close ? quote.close : []
+      return quote && quote.close ? quote.close : []
+    }
+
+    function numericClose(value) {
+      if (value === null || value === undefined || value === "") return null
+      var number = Number(value)
+      return isFinite(number) ? number : null
+    }
+
+    function numericCloses(indicators) {
+      var closes = chartCloses(indicators)
       var out = []
       for (var i = 0; i < closes.length; i++) {
-        if (closes[i] === null || closes[i] === undefined || closes[i] === "") continue
-        var n = Number(closes[i])
-        if (isFinite(n)) out.push(n)
+        var value = numericClose(closes[i])
+        if (value !== null) out.push(value)
       }
       return out
     }
@@ -206,6 +215,16 @@ function create(Model) {
       return regularChange
     }
 
+    function numericTimestamps(result) {
+      var closes = chartCloses(result && result.indicators)
+      var timestamps = result && result.timestamp ? result.timestamp : []
+      var out = []
+      for (var i = 0; i < closes.length; i++) {
+        if (numericClose(closes[i]) !== null) out.push(timestamps[i] == null ? "" : timestamps[i])
+      }
+      return out
+    }
+
     function quoteFromChart(result, fallbackSymbol) {
       if (!result || !result.meta) return null
       var meta = result.meta
@@ -246,7 +265,8 @@ function create(Model) {
         fiftyTwoWeekLow: finiteOrNull(meta.fiftyTwoWeekLow),
         priceHint: meta.priceHint,
         yahooRange: meta.range ? String(meta.range) : "",
-        closes: numericCloses(result.indicators)
+        closes: numericCloses(result.indicators),
+        timestamps: numericTimestamps(result)
       }
     }
 

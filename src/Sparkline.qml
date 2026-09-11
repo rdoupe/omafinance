@@ -6,6 +6,7 @@ Item {
   id: root
 
   property var values: []
+  property var timestamps: []
   property color lineColor: Color.foreground
   property color fillColor: Qt.rgba(lineColor.r, lineColor.g, lineColor.b, 0.22)
   property color zeroLineColor: Color.muted
@@ -16,6 +17,7 @@ Item {
   property bool interactive: false
   property string currency: "USD"
   property var priceHint: 2
+  property string hoverRange: ""
 
   property bool hovering: false
   property int hoverIndex: -1
@@ -23,6 +25,7 @@ Item {
   property real hoverX: 0
   property real hoverY: 0
   property real hoverPointerX: 0
+  property var hoverTimestamp: null
   property var cachedGeometry: null
 
   function numericValues() {
@@ -37,8 +40,36 @@ Item {
     return nums
   }
 
+  function pointTimestamps() {
+    var vals = root.values || []
+    var times = root.timestamps || []
+    var out = []
+    for (var i = 0; i < vals.length; i++) {
+      if (vals[i] === null || vals[i] === undefined || vals[i] === "") continue
+      if (isFinite(Number(vals[i]))) out.push(times[i] == null ? "" : times[i])
+    }
+    return out
+  }
+
+  function formatHoverTimestamp(value) {
+    if (value === null || value === undefined || value === "") return ""
+    var raw = String(value)
+    var date
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw))
+      date = new Date(raw + "T12:00:00")
+    else {
+      var numeric = Number(value)
+      date = isFinite(numeric) ? new Date(numeric < 1000000000000 ? numeric * 1000 : numeric) : new Date(raw)
+    }
+    if (isNaN(date.getTime())) return ""
+    if (root.hoverRange === "1D" || root.hoverRange === "1W")
+      return Qt.formatDateTime(date, "MMM d · h:mm AP")
+    return Qt.formatDate(date, "MMM d, yyyy")
+  }
+
   function buildGeom() {
     var nums = numericValues()
+    var times = pointTimestamps()
     var w = width
     var h = height
     var left = root.pad
@@ -47,6 +78,7 @@ Item {
     var bot = Math.max(top + 1, h - root.pad)
     var unset = {
       nums: nums,
+      times: times,
       min: 0,
       max: 1,
       span: 1,
@@ -86,6 +118,7 @@ Item {
     span = max - min
     var geometry = {
       nums: nums,
+      times: times,
       min: min,
       max: max,
       span: span,
@@ -137,6 +170,7 @@ Item {
     var idx = Math.round(t * Math.max(0, g.nums.length - 1))
     hoverIndex = idx
     hoverValue = g.nums[idx]
+    hoverTimestamp = idx < g.times.length ? g.times[idx] : null
     hoverX = g.xs[idx]
     hoverY = g.ys[idx]
     hovering = true
@@ -146,6 +180,7 @@ Item {
     hovering = false
     hoverIndex = -1
     hoverValue = Number.NaN
+    hoverTimestamp = null
   }
 
   Canvas {
@@ -211,6 +246,7 @@ Item {
 
   Component.onCompleted: refreshGeometry()
   onValuesChanged: refreshGeometry()
+  onTimestampsChanged: refreshGeometry()
   onLineColorChanged: canvas.requestPaint()
   onFillColorChanged: canvas.requestPaint()
   onZeroLineColorChanged: canvas.requestPaint()
@@ -250,8 +286,23 @@ Item {
     border.color: Color.popups.background
   }
 
+  Text {
+    id: cornerTimestamp
+    z: 3
+    visible: root.interactive && root.hovering && text !== ""
+    textFormat: Text.PlainText
+    text: root.formatHoverTimestamp(root.hoverTimestamp)
+    color: Color.popups.text
+    anchors.left: parent.left
+    anchors.top: parent.top
+    anchors.margins: Style.space(4)
+    font.family: Style.font.family
+    font.pixelSize: Style.font.bodySmall
+  }
+
   Rectangle {
     id: badge
+    z: 5
     visible: root.interactive && root.hovering && isFinite(root.hoverValue)
     readonly property int maxX: Math.max(0, root.width - width)
     x: Math.min(maxX, Math.max(0, root.hoverX - width / 2))

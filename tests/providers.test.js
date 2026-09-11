@@ -302,6 +302,7 @@ test("Bank of Canada rebuilds dense series from sparse, unsorted rows", () => {
   }))
   const yield5 = quotes["BD.CDN.5YR.DQ.YLD"]
   assert.deepEqual(yield5.closes, [3.30, 3.42, 3.41], "series must be date-ascending")
+  assert.deepEqual(yield5.timestamps, ["2026-09-01", "2026-09-02", "2026-09-03"])
   assert.equal(yield5.price, 3.41)
   assert.equal(yield5.asOf, "2026-09-03")
   assert.equal(yield5.currency, Model.RATE_UNIT)
@@ -379,6 +380,7 @@ test("FX rates are rebuilt from a date-keyed response", () => {
   }))
   assert.deepEqual(Object.keys(quotes).sort(), ["USD/CAD", "USD/JPY"])
   assert.deepEqual(quotes["USD/CAD"].closes, [1.3888, 1.3799, 1.3812])
+  assert.deepEqual(quotes["USD/CAD"].timestamps, ["2026-09-01", "2026-09-02", "2026-09-03"])
   assert.equal(quotes["USD/CAD"].currency, "CAD", "priced in the quote currency")
   assert.equal(quotes["USD/CAD"].priceHint, 4, "FX needs more than two decimals")
   assert.equal(quotes["USD/CAD"].asOf, "2026-09-03")

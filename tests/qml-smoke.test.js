@@ -186,6 +186,25 @@ test("sparklines cache normalized geometry for paint and hover", () => {
   assert.match(sparkline, /onPadChanged:\s*refreshGeometry\(\)/)
 })
 
+test("detail chart hover pins its point date in the graph corner", () => {
+  const detail = fs.readFileSync(source("FinanceDetailView.qml"), "utf8")
+  const sparkline = fs.readFileSync(source("Sparkline.qml"), "utf8")
+
+  assert.match(detail, /timestamps:\s*controller\.rangeChart/)
+  assert.match(detail, /hoverRange:\s*controller\.effectiveDetailRange/)
+  assert.match(sparkline, /function formatHoverTimestamp\(value\)/)
+  assert.match(sparkline, /hoverRange === "1D" \|\| root\.hoverRange === "1W"/)
+  assert.match(sparkline, /id:\s*cornerTimestamp/)
+  assert.match(sparkline, /id:\s*cornerTimestamp[\s\S]*?z:\s*3/)
+  assert.match(sparkline, /id:\s*cornerTimestamp[\s\S]*?color:\s*Color\.popups\.text/)
+  assert.match(sparkline, /id:\s*cornerTimestamp[\s\S]*?font\.pixelSize:\s*Style\.font\.bodySmall/)
+  assert.match(sparkline, /text:\s*root\.formatHoverTimestamp\(root\.hoverTimestamp\)/)
+  assert.match(sparkline, /id:\s*badgeLabel[\s\S]*?text:\s*Model\.formatPrice\(root\.hoverValue, root\.currency, root\.priceHint\)/)
+  const badgeStart = sparkline.indexOf("id: badge")
+  const badgeEnd = sparkline.indexOf("}", sparkline.indexOf("badgeLabel.implicitHeight"))
+  assert.doesNotMatch(sparkline.slice(badgeStart, badgeEnd), /formatHoverTimestamp/)
+})
+
 test("detail price changes use tone-colored text without pill backgrounds", () => {
   const detail = fs.readFileSync(source("FinanceDetailView.qml"), "utf8")
   const price = detail.indexOf("price: controller.activeQuote ? controller.detailMainPrice")

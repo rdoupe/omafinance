@@ -6,7 +6,7 @@
 // here shows up in `git diff`, so the metric cannot be quietly gamed.
 //
 // Regenerate the report from the repo root (pin the version to keep it stable):
-//   npx --yes eslint@9.39.5 -c metrics/eslint.config.mjs -f json src/ > metrics/complexity.json
+//   npx --yes eslint@10.10.0 -c metrics/eslint.config.mjs -f json src/ > metrics/complexity.json
 export default [
   {
     ignores: ["**/node_modules/**"]

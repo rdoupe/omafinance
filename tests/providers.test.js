@@ -306,6 +306,7 @@ test("Bank of Canada rebuilds dense series from sparse, unsorted rows", () => {
   assert.equal(yield5.price, 3.41)
   assert.equal(yield5.asOf, "2026-09-03")
   assert.equal(yield5.currency, Model.RATE_UNIT)
+  assert.equal(yield5.instrument, "RATE", "a Valet series is a rate, not a price")
   // The weekly series reported on only one of the three days.
   assert.deepEqual(quotes.V80691335.closes, [6.09])
 })
@@ -383,6 +384,7 @@ test("FX rates are rebuilt from a date-keyed response", () => {
   assert.equal(quotes["USD/CAD"].currency, "CAD", "priced in the quote currency")
   assert.equal(quotes["USD/CAD"].priceHint, 4, "FX needs more than two decimals")
   assert.equal(quotes["USD/CAD"].asOf, "2026-09-03")
+  assert.equal(quotes["USD/CAD"].instrument, "FX", "a pair is an exchange rate")
 })
 
 // --- registry hardening ---------------------------------------------------

@@ -194,6 +194,11 @@ Panel {
     property bool quotePageLoaded: false
     property var detailPage: ({})
     property var detailInsights: ({})
+    property var detailHistory: null
+    property string historyFetchSymbol: ""
+    property bool historyLoaded: false
+    property int historyFailureCount: 0
+    property string historyError: ""
     property var detailCache: ({})
     property var detailCacheOrder: []
     readonly property int detailCacheTtlMs: 300000
@@ -244,6 +249,7 @@ Panel {
     readonly property int chartRefreshMs: Model.backoffDelay(15000, chartFailureCount, 120000)
     readonly property int insightsRetryMs: Model.backoffDelay(5000, insightsFailureCount, 120000)
     readonly property int quotePageRetryMs: Model.backoffDelay(5000, quotePageFailureCount, 120000)
+    readonly property int historyRetryMs: Model.backoffDelay(5000, historyFailureCount, 120000)
     readonly property bool searchRunning: searchProc.running
     readonly property string barSection: {
         var s = String(setting("barSection", "right") || "right");
@@ -331,6 +337,14 @@ Panel {
             bag[kinds[1]] = detailPage;
         return p.detailStats(activeQuote, bag) || [];
     }
+    // Long-term performance for the whole instrument, computed from the full
+    // history fetch rather than the currently selected chart range. Rows the
+    // history cannot support (a 10-year row on a 3-year-old ETF, for example)
+    // are omitted so the section never shows a placeholder.
+    readonly property var performanceStats: Model.performanceStats(detailHistory)
+    // Human label for the active instrument class, so the pane can say "ETF" or
+    // "Cryptocurrency" next to the name and hide sections that do not apply.
+    readonly property string instrumentLabel: Model.instrumentLabel(activeQuote ? activeQuote.instrument : "")
     readonly property var detailRangeChange: Model.rangeChangePercent(rangeChart, effectiveDetailRange)
     readonly property var detailRangeChangeAmount: Model.rangeChangeAmount(rangeChart, effectiveDetailRange)
     readonly property var sessionQuote: quotes[detailSymbol] || rangeChart || activeQuote
@@ -848,6 +862,11 @@ Panel {
         quotePageLoaded = false;
         detailPage = ({});
         detailInsights = ({});
+        detailHistory = null;
+        historyFetchSymbol = "";
+        historyLoaded = false;
+        historyFailureCount = 0;
+        historyError = "";
         restoreDetailCache(next);
         fetchDetail();
         return true;
@@ -970,7 +989,28 @@ Panel {
         if (!detailSymbol)
             return;
         startChartFetch();
+        startHistoryFetch();
         detailEnrichmentTimer.restart();
+    }
+
+    // Long-term performance is computed from the instrument's full history, which
+    // is a separate fetch from the range chart so switching ranges cannot evict
+    // it. A provider with no chart capability leaves the section hidden.
+    function startHistoryFetch() {
+        if (!detailSymbol)
+            return;
+        if (historyProc.running || historyLoaded)
+            return;
+        var provider = providerFor(detailSymbol);
+        if (!provider || !providerSupports(detailSymbol, "chart") || !provider.chartRequest)
+            return;
+        var request = provider.chartRequest(providerIdFor(detailSymbol), "All");
+        if (!registry().isRequest(request))
+            return;
+        historyFetchSymbol = detailSymbol;
+        historyError = "";
+        historyProc.command = request.argv;
+        historyProc.running = true;
     }
 
     function fetchInsights() {
@@ -1463,6 +1503,37 @@ Panel {
     }
 
     Process {
+        id: historyProc
+        onExited: function (exitCode) {
+            var currentFetch = root.historyFetchSymbol === root.detailSymbol;
+            if (currentFetch) {
+                var provider = root.providerFor(root.detailSymbol);
+                var wantId = root.providerIdFor(root.detailSymbol);
+                var parsed = (exitCode === 0 && provider) ? provider.parseChart(historyStdout.text, wantId, "All") : null;
+                var served = (parsed && provider.servedRange) ? provider.servedRange(parsed) : "";
+                var expected = (provider && provider.expectedRange) ? provider.expectedRange("All") : "";
+                var valid = parsed && parsed.symbol === wantId && (!served || !expected || served === expected)
+                    && Model.usableHistoryPairs(parsed.closes, parsed.timestamps) >= 2;
+                if (valid) {
+                    root.detailHistory = parsed;
+                    root.historyLoaded = true;
+                    root.historyFailureCount = 0;
+                    root.historyError = "";
+                } else {
+                    root.historyFailureCount = Math.min(10, root.historyFailureCount + 1);
+                    root.historyError = "History unavailable";
+                }
+            }
+            if (root.detailSymbol && root.historyFetchSymbol !== root.detailSymbol)
+                Qt.callLater(root.startHistoryFetch);
+        }
+        stdout: StdioCollector {
+            id: historyStdout
+            waitForEnd: true
+        }
+    }
+
+    Process {
         id: insightsProc
         onExited: function (exitCode) {
             var currentFetch = root.insightsFetchSymbol === root.detailSymbol;
@@ -1594,6 +1665,13 @@ Panel {
     }
 
     Timer {
+        interval: root.historyRetryMs
+        running: root.opened && root.view === "detail" && root.historyError !== ""
+        repeat: false
+        onTriggered: root.startHistoryFetch()
+    }
+
+    Timer {
         id: pinRotateTimer
         interval: 5000
         running: root.showBarData && (root.pinned || []).length > 1
@@ -1633,7 +1711,7 @@ Panel {
         centerOnBar: false
         focusTarget: keyCatcher
         contentWidth: panel.fittedContentWidth(Style.space(520))
-        contentHeight: panel.fittedContentHeight(bodyColumn.implicitHeight, Style.space(620))
+        contentHeight: panel.fittedContentHeight(bodyColumn.implicitHeight, Style.space(760))
 
         PanelKeyCatcher {
             id: keyCatcher

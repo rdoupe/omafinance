@@ -3,6 +3,7 @@ const assert = require("node:assert/strict")
 const fs = require("node:fs")
 const path = require("node:path")
 const { spawnSync } = require("node:child_process")
+const Model = require("../src/Model.js")
 
 const root = path.resolve(__dirname, "..")
 const source = file => path.join(root, "src", file)
@@ -134,7 +135,13 @@ test("detail header stacks small ticker, company name, then price", () => {
   assert.ok(ticker < company)
   assert.ok(company < price)
   assert.match(detail, /id:\s*tickerLabel[\s\S]*?font\.pixelSize:\s*Style\.font\.body[\s\S]*?font\.bold:\s*true/)
-  assert.match(detail, /id:\s*companyName[\s\S]*?font\.pixelSize:\s*Style\.font\.display/)
+  // qmltestrunner and Omarchy QML modules are unavailable here, so company-name
+  // size is asserted through the same helper the Text element calls.
+  assert.equal(Model.DETAIL_COMPANY_FONT_ROLE, "heading")
+  assert.equal(Model.detailCompanyFontSize({ heading: 22, body: 14 }), 22)
+  assert.equal(Model.detailCompanyFontSize({ body: 14 }), null)
+  assert.equal(Model.detailCompanyFontSize(null), null)
+  assert.match(detail, /id:\s*companyName[\s\S]*?font\.pixelSize:\s*Model\.detailCompanyFontSize\(Style\.font\)/)
 })
 
 test("extended-hours price sits beside the at-close block", () => {
@@ -214,6 +221,54 @@ test("detail price changes use tone-colored text without pill backgrounds", () =
   assert.ok(price < change)
   assert.match(detail, /id:\s*detailChange[\s\S]*?color:\s*controller\.toneColor\(controller\.shownMainChange\)/)
   assert.match(detail, /id:\s*extChange[\s\S]*?color:\s*controller\.toneColor\(controller\.sessionQuote \? controller\.sessionQuote\.extendedChangePercent : null\)/)
+})
+
+test("detail pane shows an instrument label and a long-term performance section", () => {
+  const detail = fs.readFileSync(source("FinanceDetailView.qml"), "utf8")
+  const panel = fs.readFileSync(source("Panel.qml"), "utf8")
+
+  // History fetch still has to land on the All-range chart; that wiring lives
+  // in Panel.qml and is not exercised by Model.performanceStats.
+  assert.match(panel, /readonly property var performanceStats:\s*Model\.performanceStats\(detailHistory\)/)
+  assert.match(panel, /readonly property string instrumentLabel:\s*Model\.instrumentLabel\(/)
+  assert.match(panel, /function startHistoryFetch\(\)[\s\S]*?chartRequest\(providerIdFor\(detailSymbol\), "All"\)/)
+  assert.match(panel, /id:\s*historyProc[\s\S]*?parseChart\(historyStdout\.text, wantId, "All"\)/)
+  assert.match(panel, /usableHistoryPairs\(parsed\.closes, parsed\.timestamps\) >= 2/)
+  assert.match(panel, /historyFailureCount = Math\.min\(10, root\.historyFailureCount \+ 1\)/)
+  assert.match(panel, /backoffDelay\(5000, historyFailureCount, 120000\)/)
+  assert.match(panel, /running:\s*root\.opened && root\.view === "detail" && root\.historyError !== ""/)
+
+  // qmltestrunner / Omarchy QML modules (qs.Commons, qs.Ui) are not available
+  // in this environment, so the pane contract is asserted through the Model
+  // helpers the QML binds instead of instantiating FinanceDetailView.
+  const step = 365 * 86400000 / 12
+  const start = 1577836800000
+  const history = { closes: [], timestamps: [] }
+  for (let i = 0; i <= 24; i++) {
+    history.closes.push(100 * Math.pow(2, i / 12))
+    history.timestamps.push(start + i * step)
+  }
+
+  const label = Model.instrumentLabel("ETF")
+  assert.equal(label, "ETF")
+  const rows = Model.performanceStats(history)
+  assert.ok(rows.length > 0)
+  const y1 = rows.find(r => r.label === "1Y")
+  assert.ok(y1)
+  assert.match(y1.value, /%$/)
+  assert.equal(Model.changeTone(y1.change), "up")
+  assert.equal(Model.changeTone(rows.find(r => r.label === "MAX DRAWDOWN").change), "flat")
+
+  assert.deepEqual(Model.performanceStats(null), [])
+  assert.equal(Model.instrumentLabel(""), "")
+  assert.equal(Model.instrumentLabel("BOND"), "")
+
+  assert.match(detail, /visible:\s*controller\.instrumentLabel !== ""/)
+  assert.match(detail, /id:\s*performanceSection/)
+  assert.match(detail, /visible:\s*controller\.performanceStats\.length > 0/)
+  assert.match(detail, /model:\s*controller\.performanceStats/)
+  assert.match(detail, /text:\s*modelData\.value[\s\S]*?color:\s*controller\.toneColor\(modelData\.change\)/)
+  assert.match(detail, /text:\s*"PERFORMANCE"/)
 })
 
 test("only changed detail price digits roll in their direction color", () => {

@@ -347,6 +347,16 @@ function changeTone(pct) {
   return n > 0 ? "up" : "down"
 }
 
+function quoteValue(quote, key) {
+  if (!quote) return null
+  var value = quote[key]
+  return value === null || value === undefined ? null : value
+}
+
+function appendBarPart(parts, visible, value) {
+  if (visible !== false && value && value !== "-") parts.push(value)
+}
+
 // The first argument is a provider-supplied display label rather than a raw
 // symbol, so it is only trimmed - uppercasing would mangle names like "GoC 5Y".
 function barLabel(pinned, quote, vertical, showTicker, showPrice, showChange, style) {
@@ -354,14 +364,12 @@ function barLabel(pinned, quote, vertical, showTicker, showPrice, showChange, st
   if (!symbol) return "$"
   var parts = []
   if (showTicker !== false) parts.push(symbol)
-  var hasPrice = quote && quote.price !== null && quote.price !== undefined
-  var hasChange = quote && (style === "dollars"
-    ? quote.change !== null && quote.change !== undefined
-    : quote.changePercent !== null && quote.changePercent !== undefined)
-  var price = hasPrice ? formatPrice(quote.price, quote.currency, quote.priceHint) : ""
-  var change = hasChange ? formatQuoteChange(quote, style) : ""
-  if (showPrice !== false && price && price !== "-") parts.push(price)
-  if (showChange !== false && change && change !== "-") parts.push(change)
+  var priceValue = quoteValue(quote, "price")
+  var changeValue = quoteValue(quote, style === "dollars" ? "change" : "changePercent")
+  var price = priceValue === null ? "" : formatPrice(priceValue, quote.currency, quote.priceHint)
+  var change = changeValue === null ? "" : formatQuoteChange(quote, style)
+  appendBarPart(parts, showPrice, price)
+  appendBarPart(parts, showChange, change)
   return parts.length ? parts.join(vertical ? "\n" : "  ") : "$"
 }
 
@@ -382,6 +390,186 @@ function isFavorite(watchlist, symbol) {
   var next = normalizeSymbol(symbol)
   var list = Array.isArray(watchlist) ? watchlist : []
   return next !== "" && list.indexOf(next) !== -1
+}
+
+// --- Instrument classification ---
+
+// Maps a provider-reported instrument type to the small set the detail pane
+// renders differently. Yahoo reports "EQUITY"/"ETF"/"CRYPTOCURRENCY"; the rate
+// and FX providers report "RATE"/"FX". Anything unrecognised is "" so the view
+// can simply hide sections that do not apply.
+function instrumentClass(type) {
+  var t = String(type || "").toUpperCase()
+  if (t === "EQUITY" || t === "STOCK") return "equity"
+  if (t === "ETF" || t === "ETN") return "etf"
+  if (t === "CRYPTOCURRENCY" || t === "CRYPTO") return "crypto"
+  if (t === "RATE" || t === "YIELD") return "rate"
+  if (t === "FX" || t === "CURRENCY") return "fx"
+  return ""
+}
+
+// Human label for the active instrument class, so the pane can say "ETF" or
+// "Cryptocurrency" next to the name and hide the row when the type is unknown.
+function instrumentLabel(type) {
+  switch (instrumentClass(type)) {
+    case "equity": return "Stock"
+    case "etf": return "ETF"
+    case "crypto": return "Cryptocurrency"
+    case "rate": return "Rate"
+    case "fx": return "Exchange rate"
+    default: return ""
+  }
+}
+
+// Detail company name uses the heading role so it reads larger than the ticker.
+var DETAIL_COMPANY_FONT_ROLE = "heading"
+
+function detailCompanyFontSize(styleFont) {
+  if (!styleFont) return null
+  var size = styleFont[DETAIL_COMPANY_FONT_ROLE]
+  return size == null ? null : size
+}
+
+// A snapshot date may arrive as a Yahoo epoch (seconds or milliseconds) or as an
+// ISO "YYYY-MM-DD" string; both collapse to epoch milliseconds.
+function timestampMs(value) {
+  if (value === null || value === undefined) return null
+  var text = String(value).replace(/^\s+|\s+$/g, "")
+  if (text === "") return null
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    var iso = Date.parse(text + "T12:00:00")
+    return isFinite(iso) ? iso : null
+  }
+  var n = Number(text)
+  if (isFinite(n)) return n < 1000000000000 ? n * 1000 : n
+  var d = Date.parse(text)
+  return isFinite(d) ? d : null
+}
+
+// Filters a close series down to its finite values, carrying the aligned
+// timestamps along so a sparse series never shifts a date onto the wrong value.
+function numericSeries(closes, timestamps) {
+  var src = Array.isArray(closes) ? closes : []
+  var times = Array.isArray(timestamps) ? timestamps : []
+  var nums = []
+  var ts = []
+  for (var i = 0; i < src.length; i++) {
+    var n = finiteOrNull(src[i])
+    if (n === null) continue
+    var timestamp = timestampMs(times[i])
+    if (timestamp === null) continue
+    nums.push(n)
+    ts.push(timestamp)
+  }
+  return { closes: nums, timestamps: ts }
+}
+
+var MS_PER_YEAR = 365 * 86400000
+// Month-end series can sit a few weeks before a 365-day mark; anything wider
+// is a gap, not the start of this horizon.
+var MAX_CAGR_START_DEV_MS = 45 * 86400000
+
+function lastTimestampAtOrBefore(ts, end, startTime) {
+  var found = -1
+  for (var i = 0; i <= end; i++) {
+    if (ts[i] != null && ts[i] <= startTime) found = i
+  }
+  return found
+}
+
+// Trailing annualized return (CAGR) over a horizon measured in whole years,
+// ending at the last sample. Null when history does not reach back that far.
+function trailingCagr(nums, ts, years) {
+  if (nums.length < 2) return null
+  var end = nums.length - 1
+  var endTime = ts[end]
+  if (endTime == null) return null
+  var startTime = endTime - years * MS_PER_YEAR
+  var start = lastTimestampAtOrBefore(ts, end, startTime)
+  if (start < 0 || start >= end) return null
+  var first = nums[start]
+  var last = nums[end]
+  var firstTime = ts[start]
+  if (!first || !last || firstTime == null || firstTime >= endTime) return null
+  // At-or-before never undersizes the window; reject a start that is too old
+  // to represent this horizon (a multi-year gap labeled as 1Y).
+  if (startTime - firstTime > MAX_CAGR_START_DEV_MS) return null
+  var elapsedYears = (endTime - firstTime) / MS_PER_YEAR
+  if (elapsedYears < years) return null
+  var ratio = last / first
+  if (ratio <= 0) return null
+  return (Math.pow(ratio, 1 / elapsedYears) - 1) * 100
+}
+
+// Count close/timestamp pairs that performance can actually use. A symbol-valid
+// chart quote can still have one print, or closes with no dates.
+function usableHistoryPairs(closes, timestamps) {
+  return numericSeries(closes, timestamps).closes.length
+}
+
+// Long-term rows the detail pane binds: empty when there is no history object,
+// otherwise the formatted performance rows (unsupported horizons already dropped).
+function performanceStats(history) {
+  if (!history) return []
+  return performanceRows(history.closes, history.timestamps)
+}
+
+// Long-term performance for the whole instrument, independent of the chart range
+// currently selected: trailing annualized returns over 1/3/5/10 years, the worst
+// peak-to-trough decline, and how far the latest print sits below the all-time
+// high. A negative rate (a price series that crossed zero) is unusable and the
+// drawdown is reported as a non-positive percent so it formats with the standard
+// sign rules.
+function performance(closes, timestamps) {
+  var series = numericSeries(closes, timestamps)
+  var nums = series.closes
+  var ts = series.timestamps
+  if (nums.length < 2) return null
+  for (var j = 0; j < nums.length; j++) {
+    if (nums[j] <= 0) return null
+  }
+
+  var peak = -Infinity
+  var maxDrawdown = 0
+  for (var i = 0; i < nums.length; i++) {
+    var v = nums[i]
+    if (v > peak) peak = v
+    if (peak > 0) {
+      var dd = (peak - v) / peak
+      if (dd > maxDrawdown) maxDrawdown = dd
+    }
+  }
+  var last = nums[nums.length - 1]
+  var offHigh = peak > 0 ? (last / peak - 1) * 100 : null
+
+  return {
+    y1: trailingCagr(nums, ts, 1),
+    y3: trailingCagr(nums, ts, 3),
+    y5: trailingCagr(nums, ts, 5),
+    y10: trailingCagr(nums, ts, 10),
+    drawdown: maxDrawdown > 0 ? -(maxDrawdown * 100) : 0,
+    offHigh: offHigh
+  }
+}
+
+// Rows the panel renders directly: already formatted, each carrying the raw
+// percent so a QML binding can tone its color without parsing the string. A
+// horizon the history cannot back is dropped, not shown as a placeholder.
+function performanceRows(closes, timestamps) {
+  var summary = performance(closes, timestamps)
+  if (!summary) return []
+  var rows = []
+  function add(label, pct) {
+    if (pct === null || pct === undefined || !isFinite(pct)) return
+    rows.push({ label: label, value: formatPercent(pct), change: pct })
+  }
+  add("1Y", summary.y1)
+  add("3Y CAGR", summary.y3)
+  add("5Y CAGR", summary.y5)
+  add("10Y CAGR", summary.y10)
+  add("MAX DRAWDOWN", summary.drawdown)
+  add("FROM HIGH", summary.offHigh)
+  return rows
 }
 
 if (typeof module !== "undefined") {
@@ -424,5 +612,14 @@ if (typeof module !== "undefined") {
     barLabelTone: barLabelTone,
     suggestionMeta: suggestionMeta,
     isFavorite: isFavorite,
+    instrumentClass: instrumentClass,
+    instrumentLabel: instrumentLabel,
+    DETAIL_COMPANY_FONT_ROLE: DETAIL_COMPANY_FONT_ROLE,
+    detailCompanyFontSize: detailCompanyFontSize,
+    numericSeries: numericSeries,
+    performance: performance,
+    performanceRows: performanceRows,
+    performanceStats: performanceStats,
+    usableHistoryPairs: usableHistoryPairs,
   }
 }

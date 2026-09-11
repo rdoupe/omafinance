@@ -15,6 +15,21 @@ test("missing numeric values stay missing", () => {
   assert.deepEqual(Yahoo.detailStats({}, { quotePage: { beta: null }, insights: {} }), [])
 })
 
+test("detail stats are grouped into titled domain sections", () => {
+  const quote = { currency: "USD", priceHint: 2, fiftyTwoWeekHigh: 200, fiftyTwoWeekLow: 100 }
+  const sections = Yahoo.detailStats(quote, {
+    quotePage: { marketCap: 1000000000, trailingPE: 25, beta: 1.2 },
+    insights: { rating: "buy" }
+  })
+  assert.deepEqual(sections.map(s => s.title), ["VALUATION", "MARKET", "ANALYST"])
+  assert.deepEqual(sections.map(s => s.rows.map(r => r.label)), [
+    ["MARKET CAP", "P/E"],
+    ["52W HIGH", "52W LOW", "BETA"],
+    ["RATING"]
+  ])
+  assert.ok(sections.every(s => s.rows.every(r => typeof r.label === "string" && typeof r.value === "string")))
+})
+
 test("zero remains a valid numeric value", () => {
   assert.equal(Model.formatPrice(0, "USD", 2), "$0.00")
   assert.equal(Model.formatPercent(0), "0.00%")
@@ -110,8 +125,8 @@ test("chart parser does not turn missing quote fields into zero", () => {
           fulldayPrice: null,
           fulldayChangePercent: null
         },
-        timestamp: [100, 200, 300, 400],
-        indicators: { quote: [{ close: [null, 10, undefined, 11] }] }
+        timestamp: [100, 200, 300, 400, 500],
+        indicators: { quote: [{ close: [null, 10, undefined, 11, "   "] }] }
       }]
     }
   })
@@ -124,6 +139,29 @@ test("chart parser does not turn missing quote fields into zero", () => {
   assert.equal(quote.extendedPrice, null)
   assert.deepEqual(quote.closes, [10, 11])
   assert.deepEqual(quote.timestamps, [200, 400])
+})
+
+test("chart parser does not treat a missing previous close as a zero basis", () => {
+  const raw = JSON.stringify({
+    chart: {
+      result: [{
+        meta: {
+          symbol: "TEST",
+          regularMarketPrice: 105,
+          regularMarketChange: null,
+          regularMarketChangePercent: null,
+          currency: "USD"
+        },
+        indicators: { quote: [{ close: [100, 105] }] }
+      }]
+    }
+  })
+
+  const quote = Yahoo.parseChart(raw)
+  assert.equal(quote.price, 105)
+  assert.equal(quote.previousClose, null)
+  assert.equal(quote.change, null)
+  assert.equal(quote.changePercent, null)
 })
 
 test("chart parser calculates change when Yahoo omits the percentage", () => {
@@ -145,6 +183,56 @@ test("chart parser calculates change when Yahoo omits the percentage", () => {
   const quote = Yahoo.parseChart(raw)
   assert.equal(quote.price, 105)
   assert.equal(quote.changePercent, 5)
+})
+
+test("chart parser keeps Yahoo's reported extended change while calculating the comparison", () => {
+  const now = Math.floor(Date.now() / 1000)
+  const raw = JSON.stringify({
+    chart: {
+      result: [{
+        meta: {
+          symbol: "TEST",
+          regularMarketPrice: 100,
+          regularMarketChange: 2,
+          chartPreviousClose: 98,
+          fulldayPrice: 102,
+          fulldayChange: 1.5,
+          fulldayChangePercent: 1.75,
+          hasPrePostMarketData: true,
+          currentTradingPeriod: { post: { start: now - 60, end: now + 60 } },
+          currency: "USD"
+        },
+        indicators: { quote: [{ close: [98, 100] }] }
+      }]
+    }
+  })
+
+  const quote = Yahoo.parseChart(raw)
+  assert.equal(quote.price, 102)
+  assert.equal(quote.change, 1.5)
+  assert.equal(quote.changePercent, 1.75)
+  assert.equal(quote.extendedChangePercent, 2)
+  assert.equal(quote.hasExtended, true)
+  assert.equal(quote.session, "post")
+})
+
+test("chart parser preserves the instrument type the meta declares", () => {
+  const raw = JSON.stringify({
+    chart: {
+      result: [{
+        meta: { symbol: "SPY", instrumentType: "ETF", currency: "USD" },
+        indicators: { quote: [{ close: [100, 101] }] }
+      }]
+    }
+  })
+  assert.equal(Yahoo.parseChart(raw).instrument, "ETF")
+
+  const noType = JSON.stringify({
+    chart: {
+      result: [{ meta: { symbol: "TEST" }, indicators: { quote: [{ close: [1] }] } }]
+    }
+  })
+  assert.equal(Yahoo.parseChart(noType).instrument, "")
 })
 
 test("bar fields can be shown independently", () => {
@@ -181,4 +269,166 @@ test("state parsing normalizes symbols and removes invalid pins", () => {
     pinned: ["MSFT"],
     detailRange: "1Y"
   })
+})
+
+test("instrument types map to the classes the pane renders differently", () => {
+  assert.equal(Model.instrumentClass("EQUITY"), "equity")
+  assert.equal(Model.instrumentClass("ETF"), "etf")
+  assert.equal(Model.instrumentClass("CRYPTOCURRENCY"), "crypto")
+  assert.equal(Model.instrumentClass("RATE"), "rate")
+  assert.equal(Model.instrumentClass("FX"), "fx")
+  assert.equal(Model.instrumentClass("BOND"), "")
+  assert.equal(Model.instrumentClass(""), "")
+  assert.equal(Model.instrumentClass(null), "")
+})
+
+test("instrument labels hide unknown types and name the classes the pane shows", () => {
+  assert.equal(Model.instrumentLabel("EQUITY"), "Stock")
+  assert.equal(Model.instrumentLabel("ETF"), "ETF")
+  assert.equal(Model.instrumentLabel("CRYPTOCURRENCY"), "Cryptocurrency")
+  assert.equal(Model.instrumentLabel("RATE"), "Rate")
+  assert.equal(Model.instrumentLabel("FX"), "Exchange rate")
+  assert.equal(Model.instrumentLabel("BOND"), "")
+  assert.equal(Model.instrumentLabel(""), "")
+  assert.equal(Model.instrumentLabel(null), "")
+})
+
+function monthlySeries(months, yearlyGrowth) {
+  const step = 365 * 86400000 / 12
+  const start = 1577836800000 // 2020-01-01 UTC
+  const closes = []
+  const stamps = []
+  for (let i = 0; i <= months; i++) {
+    closes.push(100 * Math.pow(1 + yearlyGrowth, i / 12))
+    stamps.push(start + i * step)
+  }
+  return { closes, timestamps: stamps }
+}
+
+test("performance computes trailing CAGR, drawdown, and distance from high", () => {
+  const up = monthlySeries(24, 1.0) // doubles each year for two years
+
+  const summary = Model.performance(up.closes, up.timestamps)
+  assert.ok(Math.abs(summary.y1 - 100) < 0.5, "one-year doubling is ~100% CAGR")
+  assert.equal(summary.y3, null, "two years of history cannot back a 3Y claim")
+  assert.equal(summary.y5, null)
+  assert.equal(summary.y10, null)
+  assert.equal(summary.drawdown, 0, "a monotonic series never declines")
+  assert.ok(Math.abs(summary.offHigh) < 0.001, "the latest print is the high")
+})
+
+test("performance reports a peak-to-trough drawdown and an off-high distance", () => {
+  const closes = [100, 120, 90, 110]
+  const base = 1577836800000 // 2020-01-01 UTC, epoch milliseconds
+  const stamps = [base, base + 86400000, base + 86400000 * 2, base + 86400000 * 3]
+
+  const summary = Model.performance(closes, stamps)
+  assert.ok(Math.abs(summary.drawdown - (-25)) < 0.001, "120 -> 90 is a -25% drawdown")
+  assert.ok(Math.abs(summary.offHigh - (110 / 120 - 1) * 100) < 0.001)
+  assert.equal(summary.y1, null, "days of history is not a one-year horizon")
+})
+
+test("performance stays silent when there is no usable series", () => {
+  assert.equal(Model.performance(null, null), null)
+  assert.equal(Model.performance([], []), null)
+  assert.equal(Model.performance([10], null), null)
+  assert.equal(Model.performance([null, undefined, ""], null), null)
+})
+
+test("performance stays silent for zero-crossing and negative-rate series", () => {
+  const base = 1577836800000
+  assert.equal(Model.performance([100, -100], [base, base + 86400000]), null)
+  assert.equal(Model.performance([100, 0, 50], [base, base + 86400000, base + 86400000 * 2]), null)
+  assert.equal(Model.performance([-1.5, -1.2], [base, base + 86400000]), null)
+})
+
+test("performance rows are prerendered and drop unsupported horizons", () => {
+  const s = monthlySeries(24, 1.0)
+  const rows = Model.performanceRows(s.closes, s.timestamps)
+
+  const labels = rows.map(r => r.label)
+  assert.ok(labels.includes("1Y"), "two years back one-year CAGR")
+  assert.ok(!labels.includes("3Y CAGR"), "two years cannot back three")
+  assert.ok(labels.includes("MAX DRAWDOWN"))
+  assert.ok(labels.includes("FROM HIGH"))
+  assert.match(rows.find(r => r.label === "1Y").value, /%$/)
+  assert.equal(typeof rows.find(r => r.label === "1Y").change, "number")
+})
+
+function calendarMonthEnds(year, monthIndex, count, yearlyGrowth) {
+  const closes = []
+  const stamps = []
+  for (let i = 0; i < count; i++) {
+    const y = year + Math.floor((monthIndex + i) / 12)
+    const m = (monthIndex + i) % 12
+    stamps.push(Date.UTC(y, m + 1, 0))
+    closes.push(100 * Math.pow(1 + yearlyGrowth, i / 12))
+  }
+  return { closes, timestamps: stamps }
+}
+
+test("1Y CAGR needs a full calendar year across a leap day", () => {
+  // Month-ends from 2020-01-31 through 2021-01-31 (2020 is a leap year).
+  const full = calendarMonthEnds(2020, 0, 13, 1.0)
+  const fullSummary = Model.performance(full.closes, full.timestamps)
+  assert.notEqual(fullSummary.y1, null, "Jan 2020 through Jan 2021 covers 1Y")
+
+  // History that begins on the leap day: 2020-02-29 through 2021-01-31.
+  const short = calendarMonthEnds(2020, 1, 12, 1.0)
+  const shortSummary = Model.performance(short.closes, short.timestamps)
+  assert.equal(shortSummary.y1, null, "Feb 2020 through Jan 2021 is not a full 1Y")
+
+  const elevenMonths = monthlySeries(11, 1.0)
+  assert.equal(Model.performance(elevenMonths.closes, elevenMonths.timestamps).y1, null)
+})
+
+test("usable history requires two aligned finite close and timestamp pairs", () => {
+  assert.equal(Model.usableHistoryPairs([10], [1000]), 1)
+  assert.equal(Model.usableHistoryPairs([10, 11], [1000, 2000]), 2)
+  assert.equal(Model.usableHistoryPairs([10, 11], [1000, null]), 1)
+  assert.equal(Model.usableHistoryPairs([null, 11], [1000, 2000]), 1)
+  assert.equal(Model.usableHistoryPairs([10, 11], [null, ""]), 0)
+})
+
+test("numericSeries skips a finite close whose timestamp is missing", () => {
+  const series = Model.numericSeries([10, 11, 12], [1000, 2000, null])
+  assert.deepEqual(series.closes, [10, 11])
+  assert.deepEqual(series.timestamps, [1000000, 2000000])
+  assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, null]), 2)
+  assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, ""]), 2)
+  assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, "   "]), 2)
+
+  const whitespace = Model.numericSeries([10, 11], ["   ", 2000])
+  assert.deepEqual(whitespace.closes, [11])
+  assert.deepEqual(whitespace.timestamps, [2000000])
+
+  const base = 1577836800000
+  const summary = Model.performance([100, 120, 90], [base, base + 86400000, null])
+  assert.equal(summary.drawdown, 0, "an undated close must not enter the drawdown")
+  assert.ok(Math.abs(summary.offHigh) < 0.001, "the latest dated print is the high")
+
+  const whitespaceSummary = Model.performance([100, 120, 90], [base, base + 86400000, "   "])
+  assert.equal(whitespaceSummary.drawdown, 0, "a whitespace timestamp must not enter the drawdown")
+})
+
+test("detail pane presentation uses instrument labels, values, and tone", () => {
+  const s = monthlySeries(24, 1.0)
+  const rows = Model.performanceStats(s)
+  assert.equal(Model.instrumentLabel("ETF"), "ETF")
+  assert.ok(rows.length > 0)
+  const y1 = rows.find(r => r.label === "1Y")
+  assert.ok(y1)
+  assert.match(y1.value, /%$/)
+  assert.equal(Model.changeTone(y1.change), "up")
+  const drawdown = rows.find(r => r.label === "MAX DRAWDOWN")
+  assert.ok(drawdown)
+  assert.equal(Model.changeTone(drawdown.change), "flat")
+})
+
+test("detail pane hides performance and instrument rows when they are empty", () => {
+  assert.deepEqual(Model.performanceStats(null), [])
+  assert.deepEqual(Model.performanceStats(undefined), [])
+  assert.deepEqual(Model.performanceStats({ closes: [], timestamps: [] }), [])
+  assert.equal(Model.instrumentLabel(""), "")
+  assert.equal(Model.instrumentLabel("BOND"), "")
 })

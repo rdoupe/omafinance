@@ -172,8 +172,17 @@ Column {
             text: controller.activeQuote && controller.activeQuote.name ? controller.activeQuote.name : ""
             color: controller.contentForeground
             font.family: controller.contentFontFamily
-            font.pixelSize: Style.font.display
+            font.pixelSize: Model.detailCompanyFontSize(Style.font)
             elide: Text.ElideRight
+        }
+
+        Text {
+            visible: controller.instrumentLabel !== ""
+            textFormat: Text.PlainText
+            text: controller.instrumentLabel
+            color: controller.dim
+            font.family: controller.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
         }
     }
 
@@ -327,6 +336,53 @@ Column {
         priceHint: controller.activeQuote ? controller.activeQuote.priceHint : 2
     }
 
+    Column {
+        id: performanceSection
+        width: parent.width
+        spacing: Style.space(8)
+        visible: controller.performanceStats.length > 0
+
+        Text {
+            text: "PERFORMANCE"
+            color: controller.dim
+            font.family: controller.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.letterSpacing: 1
+        }
+
+        Grid {
+            width: parent.width
+            columns: 3
+            columnSpacing: Style.space(16)
+            rowSpacing: Style.space(12)
+
+            Repeater {
+                model: controller.performanceStats
+
+                Column {
+                    required property var modelData
+                    width: (performanceSection.width - Style.space(32)) / 3
+                    spacing: Style.space(4)
+
+                    Text {
+                        text: modelData.label
+                        color: controller.dim
+                        font.family: controller.contentFontFamily
+                        font.pixelSize: Style.font.bodySmall
+                        font.letterSpacing: 1
+                    }
+                    Text {
+                        textFormat: Text.PlainText
+                        text: modelData.value
+                        color: controller.toneColor(modelData.change)
+                        font.family: controller.contentFontFamily
+                        font.pixelSize: Style.font.title
+                    }
+                }
+            }
+        }
+    }
+
     Row {
         width: parent.width
         spacing: Style.space(24)
@@ -405,35 +461,54 @@ Column {
         }
     }
 
-    Grid {
-        width: parent.width
-        columns: 3
-        columnSpacing: Style.space(16)
-        rowSpacing: Style.space(12)
+    Repeater {
+        model: controller.detailStats
 
-        Repeater {
-            model: controller.detailStats
+        Column {
+            required property var modelData
+            width: parent.width
+            spacing: Style.space(8)
 
-            Column {
-                required property var modelData
-                width: (detailViewRoot.width - Style.space(32)) / 3
-                spacing: Style.space(4)
+            Text {
+                visible: modelData.title !== ""
+                text: modelData.title
+                color: controller.dim
+                font.family: controller.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+                font.letterSpacing: 1
+            }
 
-                Text {
-                    text: modelData.label
-                    color: controller.dim
-                    font.family: controller.contentFontFamily
-                    font.pixelSize: Style.font.bodySmall
-                    font.letterSpacing: 1
-                }
-                Text {
-                    textFormat: Text.PlainText
-                    text: modelData.value
-                    color: controller.contentForeground
-                    font.family: controller.contentFontFamily
-                    font.pixelSize: Style.font.title
-                    wrapMode: Text.WordWrap
-                    width: parent.width
+            Grid {
+                width: parent.width
+                columns: 3
+                columnSpacing: Style.space(16)
+                rowSpacing: Style.space(12)
+
+                Repeater {
+                    model: modelData.rows
+
+                    Column {
+                        required property var modelData
+                        width: (detailViewRoot.width - Style.space(32)) / 3
+                        spacing: Style.space(4)
+
+                        Text {
+                            text: modelData.label
+                            color: controller.dim
+                            font.family: controller.contentFontFamily
+                            font.pixelSize: Style.font.bodySmall
+                            font.letterSpacing: 1
+                        }
+                        Text {
+                            textFormat: Text.PlainText
+                            text: modelData.value
+                            color: controller.contentForeground
+                            font.family: controller.contentFontFamily
+                            font.pixelSize: Style.font.title
+                            wrapMode: Text.WordWrap
+                            width: parent.width
+                        }
+                    }
                 }
             }
         }

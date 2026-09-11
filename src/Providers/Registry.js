@@ -53,26 +53,16 @@ var CONTRACT = {
     detail: [["detailRequests"], ["parseDetail"]]
 };
 
-// Returns a list of problems, empty when the provider is well formed. Checked at
-// registration so a malformed provider names its own fault immediately, instead
-// of throwing later from inside a process callback where the cause is invisible.
-function validate(provider) {
-    var problems = [];
-    if (!provider || typeof provider !== "object")
-        return ["provider must be an object"];
-    if (!provider.id || typeof provider.id !== "string")
-        return ["provider must have a string id"];
-    // The id becomes a ref prefix, so a separator in it would break the
-    // parseRef/formatRef round trip the whole registry rests on.
-    if (!/^[a-z0-9_-]+$/.test(provider.id))
-        return ["provider id '" + provider.id + "' must match /^[a-z0-9_-]+$/"];
-
-    var name = provider.id;
-    if (!provider.capabilities || typeof provider.capabilities !== "object") {
-        problems.push(name + ": capabilities must be an object");
-        return problems;
+function hasImplementation(provider, alternatives) {
+    for (var i = 0; i < alternatives.length; i++) {
+        if (typeof provider[alternatives[i]] === "function")
+            return true;
     }
+    return false;
+}
 
+function capabilityProblems(provider) {
+    var problems = [];
     for (var i = 0; i < CAPABILITIES.length; i++) {
         var capability = CAPABILITIES[i];
         if (provider.capabilities[capability] !== true)
@@ -82,18 +72,32 @@ function validate(provider) {
             continue;
         for (var g = 0; g < groups.length; g++) {
             var alternatives = groups[g];
-            var satisfied = false;
-            for (var a = 0; a < alternatives.length; a++) {
-                if (typeof provider[alternatives[a]] === "function")
-                    satisfied = true;
-            }
-            if (!satisfied) {
-                problems.push(name + ": capability '" + capability + "' requires "
+            if (!hasImplementation(provider, alternatives)) {
+                problems.push(provider.id + ": capability '" + capability + "' requires "
                     + alternatives.join("() or ") + "()");
             }
         }
     }
     return problems;
+}
+
+// Returns a list of problems, empty when the provider is well formed. Checked at
+// registration so a malformed provider names its own fault immediately, instead
+// of throwing later from inside a process callback where the cause is invisible.
+function validate(provider) {
+    if (!provider || typeof provider !== "object")
+        return ["provider must be an object"];
+    if (!provider.id || typeof provider.id !== "string")
+        return ["provider must have a string id"];
+    // The id becomes a ref prefix, so a separator in it would break the
+    // parseRef/formatRef round trip the whole registry rests on.
+    if (!/^[a-z0-9_-]+$/.test(provider.id))
+        return ["provider id '" + provider.id + "' must match /^[a-z0-9_-]+$/"];
+
+    if (!provider.capabilities || typeof provider.capabilities !== "object")
+        return [provider.id + ": capabilities must be an object"];
+
+    return capabilityProblems(provider);
 }
 
 function register(provider) {

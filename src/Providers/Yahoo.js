@@ -197,6 +197,7 @@ function create(Model) {
       return {
         symbol: symbol,
         name: String(meta.shortName || meta.longName || symbol),
+        instrument: meta.instrumentType ? String(meta.instrumentType) : "",
         currency: String(meta.currency || "USD"),
         price: latest,
         previousClose: prev,

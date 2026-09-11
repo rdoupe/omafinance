@@ -150,6 +150,7 @@ function create(Model) {
         return {
             symbol: series.id,
             name: series.base + " to " + series.quote,
+            instrument: "FX",
             // Priced in the quote currency, so the existing currency formatting
             // path applies unchanged.
             currency: series.quote,

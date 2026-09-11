@@ -152,6 +152,7 @@ function create(Model) {
         return {
             symbol: series.id,
             name: series.label,
+            instrument: "RATE",
             currency: RATE_UNIT,
             price: last,
             previousClose: prev,

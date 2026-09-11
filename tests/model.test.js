@@ -145,6 +145,25 @@ test("chart parser calculates change when Yahoo omits the percentage", () => {
   assert.equal(quote.changePercent, 5)
 })
 
+test("chart parser preserves the instrument type the meta declares", () => {
+  const raw = JSON.stringify({
+    chart: {
+      result: [{
+        meta: { symbol: "SPY", instrumentType: "ETF", currency: "USD" },
+        indicators: { quote: [{ close: [100, 101] }] }
+      }]
+    }
+  })
+  assert.equal(Yahoo.parseChart(raw).instrument, "ETF")
+
+  const noType = JSON.stringify({
+    chart: {
+      result: [{ meta: { symbol: "TEST" }, indicators: { quote: [{ close: [1] }] } }]
+    }
+  })
+  assert.equal(Yahoo.parseChart(noType).instrument, "")
+})
+
 test("bar fields can be shown independently", () => {
   const quote = { price: 241.6, currency: "USD", priceHint: 2, change: 2.94, changePercent: 1.234 }
   assert.equal(Model.barLabel("AAPL", quote, false, true, true, true), "AAPL  $241.60  +1.23%")
@@ -179,4 +198,70 @@ test("state parsing normalizes symbols and removes invalid pins", () => {
     pinned: ["MSFT"],
     detailRange: "1Y"
   })
+})
+
+test("instrument types map to the classes the pane renders differently", () => {
+  assert.equal(Model.instrumentClass("EQUITY"), "equity")
+  assert.equal(Model.instrumentClass("ETF"), "etf")
+  assert.equal(Model.instrumentClass("CRYPTOCURRENCY"), "crypto")
+  assert.equal(Model.instrumentClass("RATE"), "rate")
+  assert.equal(Model.instrumentClass("FX"), "fx")
+  assert.equal(Model.instrumentClass("BOND"), "")
+  assert.equal(Model.instrumentClass(""), "")
+  assert.equal(Model.instrumentClass(null), "")
+})
+
+function monthlySeries(months, yearlyGrowth) {
+  const step = 365 * 86400000 / 12
+  const start = 1577836800000 // 2020-01-01 UTC
+  const closes = []
+  const stamps = []
+  for (let i = 0; i <= months; i++) {
+    closes.push(100 * Math.pow(1 + yearlyGrowth, i / 12))
+    stamps.push(start + i * step)
+  }
+  return { closes, timestamps: stamps }
+}
+
+test("performance computes trailing CAGR, drawdown, and distance from high", () => {
+  const up = monthlySeries(24, 1.0) // doubles each year for two years
+
+  const summary = Model.performance(up.closes, up.timestamps)
+  assert.ok(Math.abs(summary.y1 - 100) < 0.5, "one-year doubling is ~100% CAGR")
+  assert.equal(summary.y3, null, "two years of history cannot back a 3Y claim")
+  assert.equal(summary.y5, null)
+  assert.equal(summary.y10, null)
+  assert.equal(summary.drawdown, 0, "a monotonic series never declines")
+  assert.ok(Math.abs(summary.offHigh) < 0.001, "the latest print is the high")
+})
+
+test("performance reports a peak-to-trough drawdown and an off-high distance", () => {
+  const closes = [100, 120, 90, 110]
+  const base = 1577836800000 // 2020-01-01 UTC, epoch milliseconds
+  const stamps = [base, base + 86400000, base + 86400000 * 2, base + 86400000 * 3]
+
+  const summary = Model.performance(closes, stamps)
+  assert.ok(Math.abs(summary.drawdown - (-25)) < 0.001, "120 -> 90 is a -25% drawdown")
+  assert.ok(Math.abs(summary.offHigh - (110 / 120 - 1) * 100) < 0.001)
+  assert.equal(summary.y1, null, "days of history is not a one-year horizon")
+})
+
+test("performance stays silent when there is no usable series", () => {
+  assert.equal(Model.performance(null, null), null)
+  assert.equal(Model.performance([], []), null)
+  assert.equal(Model.performance([10], null), null)
+  assert.equal(Model.performance([null, undefined, ""], null), null)
+})
+
+test("performance rows are prerendered and drop unsupported horizons", () => {
+  const s = monthlySeries(24, 1.0)
+  const rows = Model.performanceRows(s.closes, s.timestamps)
+
+  const labels = rows.map(r => r.label)
+  assert.ok(labels.includes("1Y"), "two years back one-year CAGR")
+  assert.ok(!labels.includes("3Y CAGR"), "two years cannot back three")
+  assert.ok(labels.includes("MAX DRAWDOWN"))
+  assert.ok(labels.includes("FROM HIGH"))
+  assert.match(rows.find(r => r.label === "1Y").value, /%$/)
+  assert.equal(typeof rows.find(r => r.label === "1Y").change, "number")
 })

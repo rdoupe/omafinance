@@ -134,7 +134,7 @@ test("detail header stacks small ticker, company name, then price", () => {
   assert.ok(ticker < company)
   assert.ok(company < price)
   assert.match(detail, /id:\s*tickerLabel[\s\S]*?font\.pixelSize:\s*Style\.font\.body[\s\S]*?font\.bold:\s*true/)
-  assert.match(detail, /id:\s*companyName[\s\S]*?font\.pixelSize:\s*Style\.font\.display/)
+  assert.match(detail, /id:\s*companyName[\s\S]*?font\.pixelSize:\s*Style\.font\.heading/)
 })
 
 test("extended-hours price sits beside the at-close block", () => {
@@ -195,6 +195,23 @@ test("detail price changes use tone-colored text without pill backgrounds", () =
   assert.ok(price < change)
   assert.match(detail, /id:\s*detailChange[\s\S]*?color:\s*controller\.toneColor\(controller\.shownMainChange\)/)
   assert.match(detail, /id:\s*extChange[\s\S]*?color:\s*controller\.toneColor\(controller\.sessionQuote \? controller\.sessionQuote\.extendedChangePercent : null\)/)
+})
+
+test("detail pane shows an instrument label and a long-term performance section", () => {
+  const detail = fs.readFileSync(source("FinanceDetailView.qml"), "utf8")
+  const panel = fs.readFileSync(source("Panel.qml"), "utf8")
+
+  assert.match(panel, /readonly property var performanceStats:\s*\{/)
+  assert.match(panel, /Model\.performanceRows\(history\.closes, history\.timestamps\)/)
+  assert.match(panel, /function startHistoryFetch\(\)[\s\S]*?chartRequest\(providerIdFor\(detailSymbol\), "All"\)/)
+  assert.match(panel, /id:\s*historyProc[\s\S]*?parseChart\(historyStdout\.text, wantId, "All"\)/)
+  assert.match(panel, /readonly property string instrumentLabel:/)
+
+  assert.match(detail, /visible:\s*controller\.instrumentLabel !== ""/)
+  assert.match(detail, /id:\s*performanceSection/)
+  assert.match(detail, /model:\s*controller\.performanceStats/)
+  assert.match(detail, /text:\s*modelData\.value[\s\S]*?color:\s*controller\.toneColor\(modelData\.change\)/)
+  assert.match(detail, /text:\s*"PERFORMANCE"/)
 })
 
 test("only changed detail price digits roll in their direction color", () => {

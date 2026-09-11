@@ -22,10 +22,9 @@ reviews:
     enabled: true
     auto_incremental_review: true
     drafts: false
+  tools:
+    eslint:
+      enabled: false
 
 chat:
   auto_reply: true
-
-tools:
-  eslint:
-    enabled: false

@@ -154,9 +154,7 @@ function create(Model) {
     }
 
     function numericClose(value) {
-      if (value === null || value === undefined || value === "") return null
-      var number = Number(value)
-      return isFinite(number) ? number : null
+      return finiteOrNull(value)
     }
 
     function numericCloses(indicators) {

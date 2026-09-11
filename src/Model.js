@@ -433,13 +433,14 @@ function detailCompanyFontSize(styleFont) {
 // A snapshot date may arrive as a Yahoo epoch (seconds or milliseconds) or as an
 // ISO "YYYY-MM-DD" string; both collapse to epoch milliseconds.
 function timestampMs(value) {
-  if (value === null || value === undefined || value === "") return null
-  var text = String(value)
+  if (value === null || value === undefined) return null
+  var text = String(value).replace(/^\s+|\s+$/g, "")
+  if (text === "") return null
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
     var iso = Date.parse(text + "T12:00:00")
     return isFinite(iso) ? iso : null
   }
-  var n = Number(value)
+  var n = Number(text)
   if (isFinite(n)) return n < 1000000000000 ? n * 1000 : n
   var d = Date.parse(text)
   return isFinite(d) ? d : null
@@ -524,6 +525,9 @@ function performance(closes, timestamps) {
   var nums = series.closes
   var ts = series.timestamps
   if (nums.length < 2) return null
+  for (var j = 0; j < nums.length; j++) {
+    if (nums[j] <= 0) return null
+  }
 
   var peak = -Infinity
   var maxDrawdown = 0

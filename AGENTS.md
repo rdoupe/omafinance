@@ -20,10 +20,11 @@ Do not merge with unresolved valid findings. Do not change production behavior m
 
 `scripts/pr-review-context.sh` prints each GraphQL thread ID and REST comment ID.
 
-Reply to an inline comment:
+Reply to an inline comment. Write the verified response to a file first so review text is never interpolated into the command source, then pass that value as a quoted argument:
 
 ```sh
-gh api --method POST repos/rdoupe/omafinance/pulls/<pr>/comments/<comment-id>/replies -f body='<verified response>'
+reply_body=$(cat reply.txt)
+gh api --method POST repos/rdoupe/omafinance/pulls/<pr>/comments/<comment-id>/replies -f body="$reply_body"
 ```
 
 Resolve its thread after the fix is pushed and verified:

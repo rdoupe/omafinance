@@ -125,8 +125,8 @@ test("chart parser does not turn missing quote fields into zero", () => {
           fulldayPrice: null,
           fulldayChangePercent: null
         },
-        timestamp: [100, 200, 300, 400],
-        indicators: { quote: [{ close: [null, 10, undefined, 11] }] }
+        timestamp: [100, 200, 300, 400, 500],
+        indicators: { quote: [{ close: [null, 10, undefined, 11, "   "] }] }
       }]
     }
   })
@@ -196,7 +196,7 @@ test("chart parser keeps Yahoo's reported extended change while calculating the 
           regularMarketChange: 2,
           chartPreviousClose: 98,
           fulldayPrice: 102,
-          fulldayChange: 2,
+          fulldayChange: 1.5,
           fulldayChangePercent: 1.75,
           hasPrePostMarketData: true,
           currentTradingPeriod: { post: { start: now - 60, end: now + 60 } },
@@ -209,7 +209,7 @@ test("chart parser keeps Yahoo's reported extended change while calculating the 
 
   const quote = Yahoo.parseChart(raw)
   assert.equal(quote.price, 102)
-  assert.equal(quote.change, 2)
+  assert.equal(quote.change, 1.5)
   assert.equal(quote.changePercent, 1.75)
   assert.equal(quote.extendedChangePercent, 2)
   assert.equal(quote.hasExtended, true)
@@ -335,6 +335,13 @@ test("performance stays silent when there is no usable series", () => {
   assert.equal(Model.performance([null, undefined, ""], null), null)
 })
 
+test("performance stays silent for zero-crossing and negative-rate series", () => {
+  const base = 1577836800000
+  assert.equal(Model.performance([100, -100], [base, base + 86400000]), null)
+  assert.equal(Model.performance([100, 0, 50], [base, base + 86400000, base + 86400000 * 2]), null)
+  assert.equal(Model.performance([-1.5, -1.2], [base, base + 86400000]), null)
+})
+
 test("performance rows are prerendered and drop unsupported horizons", () => {
   const s = monthlySeries(24, 1.0)
   const rows = Model.performanceRows(s.closes, s.timestamps)
@@ -389,11 +396,19 @@ test("numericSeries skips a finite close whose timestamp is missing", () => {
   assert.deepEqual(series.timestamps, [1000000, 2000000])
   assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, null]), 2)
   assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, ""]), 2)
+  assert.equal(Model.usableHistoryPairs([10, 11, 12], [1000, 2000, "   "]), 2)
+
+  const whitespace = Model.numericSeries([10, 11], ["   ", 2000])
+  assert.deepEqual(whitespace.closes, [11])
+  assert.deepEqual(whitespace.timestamps, [2000000])
 
   const base = 1577836800000
   const summary = Model.performance([100, 120, 90], [base, base + 86400000, null])
   assert.equal(summary.drawdown, 0, "an undated close must not enter the drawdown")
   assert.ok(Math.abs(summary.offHigh) < 0.001, "the latest dated print is the high")
+
+  const whitespaceSummary = Model.performance([100, 120, 90], [base, base + 86400000, "   "])
+  assert.equal(whitespaceSummary.drawdown, 0, "a whitespace timestamp must not enter the drawdown")
 })
 
 test("detail pane presentation uses instrument labels, values, and tone", () => {

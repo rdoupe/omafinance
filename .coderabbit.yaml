@@ -1,3 +1,5 @@
+# Omarchy plugin / ops repos — free plan + often <10 stars.
+# Always comment on PRs: @coderabbitai review
 language: en-US
 tone_instructions: "Be direct and concise. Prioritize concrete behavioral regressions, safety risks, and missing tests over style preferences."
 enable_free_tier: true
